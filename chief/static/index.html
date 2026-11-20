@@ -226,7 +226,14 @@ tr.selected { box-shadow: inset 3px 0 0 var(--brand); }
 .session-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .session-name { font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .session-meta { font-size: 13px; color: var(--pane-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sheet .session-resume { flex: none; height: 44px; color: var(--pane-muted); font-size: 13px; }
+.session-resume { flex: none; height: 44px; color: var(--pane-muted); font-size: 13px; gap: 6px; }
+.app-icon { flex: none; border-radius: 4px; }
+.resume-split { display: flex; align-items: center; flex: none; }
+.resume-split .session-resume { padding-right: 4px; }
+.resume-menu > summary { width: 24px; }
+.row-menu-label { font-size: 12px; color: var(--pane-muted); padding: 6px 10px 4px; }
+.row-menu-pop .menu-choice { display: flex; align-items: center; gap: 8px; }
+.row-menu-pop .menu-choice span { flex: 1; }
 .row-menu { position: relative; flex: none; }
 .row-menu > summary { list-style: none; width: 36px; height: 44px; display: flex; align-items: center; justify-content: center;
                       border-radius: 8px; color: var(--pane-muted); cursor: pointer; }
@@ -827,37 +834,65 @@ async function launchSession(it, prompt, workdir, worktree, button) {
   await load();
 }
 
+// Where Resume opens a session: the last place picked from its menu (remembered in this browser), else me.toml's launcher.
+function resumeTargets() { return state.queue.resume_targets || [{ key: state.queue.launcher, label: state.queue.launcher_label }]; }
+function resumeTarget() {
+  const targets = resumeTargets();
+  let saved = null;
+  try { saved = localStorage.getItem("cos.resumeIn"); } catch {}
+  return targets.find(t => t.key === saved) || targets.find(t => t.key === state.queue.launcher) || targets[0];
+}
+function setResumeTarget(key) {
+  try { localStorage.setItem("cos.resumeIn", key); } catch {}
+}
+function appIcon(key, size = 16) {
+  const img = el("img", { class: "app-icon", src: `/app-icons/${key}.png`, width: size, height: size, alt: "" });
+  img.addEventListener("error", () => img.replaceWith(icon("terminal", size - 2)), { once: true });
+  return img;
+}
+
 function sessionRow(s, onUnlink) {
   const repo = (s.cwd || "").split("/").filter(Boolean).pop();
-  const resume = el("button", { class: "btn btn-ghost btn-sm session-resume", "aria-label": `Resume ${s.title}` },
-    icon("terminal", 14), "Resume");
-  const flash = (ic, label) => {
-    resume.replaceChildren(icon(ic, 14), label);
-    setTimeout(() => { resume.disabled = false; resume.replaceChildren(icon("terminal", 14), "Resume"); }, 1500);
-  };
-  // Reopens the session where the launcher setting says; if that fails, copies the resume command instead.
-  resume.addEventListener("click", async () => {
+  const target = resumeTarget();
+  const resume = el("button", { class: "btn btn-ghost btn-sm session-resume", "aria-label": `Resume ${s.title} in ${target.label}`,
+    title: `Resume in ${target.label}` }, appIcon(target.key), "Resume");
+  const idle = () => { resume.disabled = false; resume.replaceChildren(appIcon(resumeTarget().key), "Resume"); };
+  const flash = (ic, label) => { resume.replaceChildren(icon(ic, 14), label); setTimeout(idle, 1500); };
+  // If opening fails, copies the resume command instead.
+  const open = async key => {
     resume.disabled = true;
-    resume.replaceChildren(icon("terminal", 14), "Opening…");
+    resume.replaceChildren(appIcon(key), "Opening…");
     try {
-      const r = await api("/api/sessions/resume", { method: "POST", body: JSON.stringify({ session_id: s.session_id }) });
+      const r = await api("/api/sessions/resume", { method: "POST", body: JSON.stringify({ session_id: s.session_id, where: key }) });
       flash("check", "Opened");
       if (r.opened_in) toast(`Opened in ${r.opened_in}`);
     } catch (e) {
       try { await navigator.clipboard.writeText(s.resume); flash("copy", "Copied"); toast(`Couldn't open it (${e.message}). Copied the resume command instead.`); }
-      catch { resume.disabled = false; resume.replaceChildren(icon("terminal", 14), "Resume"); toast(`Couldn't open it: ${e.message}`); }
+      catch { idle(); toast(`Couldn't open it: ${e.message}`); }
     }
-  });
+  };
+  resume.addEventListener("click", () => open(resumeTarget().key));
+  const closeMenu = e => { e.currentTarget.closest("details").open = false; };
+  const picker = el("details", { class: "row-menu resume-menu" },
+    el("summary", { "aria-label": "Choose where to resume", title: "Choose where to resume" }, icon("chevron", 14)),
+    el("div", { class: "row-menu-pop" },
+      el("div", { class: "row-menu-label" }, "Resume in"),
+      resumeTargets().map(t => el("button", { class: "menu-choice", "aria-pressed": String(t.key === target.key), onclick: e => {
+        closeMenu(e);
+        setResumeTarget(t.key);
+        // Re-render after opening so every row's Resume shows the new place, without cutting off this one's feedback.
+        open(t.key).then(render);
+      } }, appIcon(t.key), el("span", {}, t.label), t.key === target.key ? icon("check", 14) : null))));
   return el("div", { class: "session-row" },
     icon("terminal", 16),
     el("div", { class: "session-main" },
       el("div", { class: "session-name", title: s.title }, s.title),
       el("div", { class: "session-meta" }, [repo, `active ${ago(s.last_at)}`].filter(Boolean).join(" · "))),
-    resume,
+    el("div", { class: "resume-split" }, resume, picker),
     el("details", { class: "row-menu" },
       el("summary", { "aria-label": "More actions" }, icon("more", 16)),
       el("div", { class: "row-menu-pop" },
-        el("button", { onclick: e => { e.currentTarget.closest("details").open = false; copyText(s.resume, "Resume command copied"); } }, "Copy resume command"),
+        el("button", { onclick: e => { closeMenu(e); copyText(s.resume, "Resume command copied"); } }, "Copy resume command"),
         el("button", { title: "Not related; it won't be linked again", onclick: onUnlink }, "Unlink"))));
 }
 async function copyText(text, done) {

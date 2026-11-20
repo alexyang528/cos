@@ -12,7 +12,8 @@ an engineer at <company> on <team>: <the areas, systems and kinds of requests yo
 # The GitHub repo most of your work lands in. Leads check PR status and read code here.
 github_repo = "your-org/your-repo"
 
-# Where "Start" on an item opens its agent prompt, and where "Resume" reopens a session:
+# Where "Start" on an item opens its agent prompt, and where "Resume" reopens a session by default (the web app
+# can resume in any of these from the menu next to Resume, and remembers the last pick):
 #   "desktop"  - a new Code session in the Claude desktop app, with the prompt drafted (press Enter to send)
 #   "terminal" - claude in a new terminal window (terminal_app below), optionally in a new git worktree
 #   "orca"     - an Orca workspace tab, optionally in a new Orca worktree

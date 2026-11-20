@@ -26,6 +26,7 @@ FONTS = {"/fonts/inter.woff2": "Inter-Variable-latin.woff2", "/fonts/reddit-mono
 # icon (gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png); GitHub's is github.com/fluidicon.png.
 LOGOS = {"/logos/slack.png": "slack.png", "/logos/granola.png": "granola.png", "/logos/switchboard.png": "switchboard.png",
          "/logos/notion.png": "notion.png", "/logos/gmail.png": "gmail.png", "/logos/github.png": "github.png"}
+APP_ICON = re.compile(r"^/app-icons/([a-z]+)\.png$")
 OPEN_STATUSES = ("pending", "changes_requested", "approved", "failed", "executing")
 DECISIONS = {
     "approve": "approved",
@@ -127,7 +128,7 @@ def add_source_labels(conn, items: list[dict]) -> None:
 
 def snapshot(conn, include_recent: bool) -> dict:
     from .sessions import links_for
-    from . import workstreams
+    from . import launch, workstreams
     items = [item_json(r) for r in store.queue(conn, OPEN_STATUSES)]
     recent = []
     if include_recent:
@@ -158,6 +159,7 @@ def snapshot(conn, include_recent: bool) -> dict:
         "worktree_by_default": sorted(config.WORKTREE_BY_DEFAULT),
         "launcher": config.LAUNCHER,
         "launcher_label": config.LAUNCHERS[config.LAUNCHER],
+        "resume_targets": launch.resume_targets(),
         "today": {"cost_usd": today["c"], "runs": today["n"], "errors": today["e"] or 0},
     }
 
@@ -251,6 +253,13 @@ def make_handler(token: str, port: int):
                 self._send(HTTPStatus.OK, (INDEX.parent / "fonts" / FONTS[self.path]).read_bytes(), "font/woff2")
             elif self.path in LOGOS:
                 self._send(HTTPStatus.OK, (INDEX.parent / "logos" / LOGOS[self.path]).read_bytes(), "image/png")
+            elif APP_ICON.match(self.path):
+                from . import launch
+                png = launch.app_icon(APP_ICON.match(self.path).group(1))
+                if png:
+                    self._send(HTTPStatus.OK, png, "image/png")
+                else:
+                    self._json(HTTPStatus.NOT_FOUND, {"error": "no icon"})
             elif self.path.startswith("/api/queue") or self.path == "/api/runs" or WS_GET.match(self.path):
                 if not secrets.compare_digest(self.headers.get("X-COS-Token", ""), token):
                     return self._json(HTTPStatus.FORBIDDEN, {"error": "bad token"})
@@ -417,7 +426,7 @@ def make_handler(token: str, port: int):
             launch.link_soon()
 
         def _resume(self):
-            """Open a linked Claude Code session again, where config.LAUNCHER says."""
+            """Open a linked Claude Code session again: where the request says, else where config.LAUNCHER says."""
             from . import launch
             try:
                 body = self._payload()
@@ -425,7 +434,7 @@ def make_handler(token: str, port: int):
                 return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
             conn = db.open_db()
             try:
-                where = launch.resume(conn, str(body.get("session_id") or ""))
+                where = launch.resume(conn, str(body.get("session_id") or ""), body.get("where") or None)
                 return self._json(HTTPStatus.OK, {"ok": True, "opened_in": where})
             except KeyError as e:
                 return self._json(HTTPStatus.NOT_FOUND, {"error": str(e).strip("'")})

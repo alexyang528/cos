@@ -1,6 +1,6 @@
 """Start a Claude Code session from a queue item's agent prompt, and reopen linked sessions.
 
-Where they open is config.LAUNCHER:
+Where they open is config.LAUNCHER; a resume can name another launcher:
 - desktop: a new Code session in the Claude desktop app (claude://code/new), with the prompt drafted for me to send.
   Resume opens the app's own record of the session (claude://code/continue), or a terminal if the app has none.
 - terminal: claude in a new terminal window, run from a .command file (no Automation permission needed), optionally
@@ -12,6 +12,7 @@ indexer reads the tag and links the session to the item, and to the item's works
 """
 
 import json
+import plistlib
 import re
 import shlex
 import shutil
@@ -209,29 +210,75 @@ def _git_top(path: Path) -> Path | None:
     return Path(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else None
 
 
-def resume(conn, session_id: str) -> str:
-    """Open a Claude Code session again; returns where it opened. Claude keeps a session's transcript under the folder
-    it ran in, so `claude --resume` must run from that same folder."""
+def resume(conn, session_id: str, where: str | None = None) -> str:
+    """Open a Claude Code session again, in `where` (a launcher; default config.LAUNCHER); returns where it opened.
+    Claude keeps a session's transcript under the folder it ran in, so `claude --resume` must run from that folder."""
     if not SESSION_ID.match(session_id or ""):
         raise ValueError("not a Claude session id")
+    where = where or config.LAUNCHER
+    if where not in config.LAUNCHERS:
+        raise ValueError(f"can't resume in {where!r}; expected one of {', '.join(config.LAUNCHERS)}")
     row = conn.execute("SELECT cwd, title FROM claude_sessions WHERE id = ?", (session_id,)).fetchone()
     if row is None:
         raise KeyError(f"no session {session_id}")
     cwd = Path(row["cwd"] or "")
     if not row["cwd"] or not cwd.is_dir():
         raise ValueError(f"the session's folder {row['cwd']!r} no longer exists")
-    if config.LAUNCHER == "desktop":
+    if where == "desktop":
         local_id = desktop_session(session_id)
         if local_id:
             _open(f"claude://code/continue?{urlencode({'session': local_id})}")
             return "the Claude app"
-    if config.LAUNCHER == "orca":
+    if where == "orca":
         _resume_orca(cwd, session_id, row["title"])
         return "Orca"
     # A session the desktop app never saw (started in Orca or a terminal) resumes in a terminal.
     _run_in_terminal(_launch_dir() / f"resume-{session_id[:8]}-{int(time.time())}", cwd,
                      shlex.join([_claude_bin(), "--resume", session_id]))
     return config.TERMINAL_APP
+
+
+APP_DIRS = (Path("/Applications"), Path.home() / "Applications", Path("/System/Applications"),
+            Path("/System/Applications/Utilities"))
+
+
+def _app_name(launcher: str) -> str:
+    return {"desktop": "Claude", "orca": "Orca", "terminal": config.TERMINAL_APP}[launcher]
+
+
+def _app_bundle(launcher: str) -> Path | None:
+    name = _app_name(launcher)
+    return next((d / f"{name}.app" for d in APP_DIRS if (d / f"{name}.app").is_dir()), None)
+
+
+def resume_targets() -> list[dict]:
+    """The launchers a session can be resumed in on this machine: the terminal always, the apps when installed."""
+    return [{"key": k, "label": "Claude app" if k == "desktop" else _app_name(k)}
+            for k in config.LAUNCHERS if k == "terminal" or _app_bundle(k)]
+
+
+def app_icon(launcher: str) -> bytes | None:
+    """The launcher's app icon as a 64px PNG, converted from the installed app's .icns once and cached. Read from
+    the app at runtime so no third-party icon is checked into the repo."""
+    if launcher not in config.LAUNCHERS:
+        return None
+    cached = paths.home() / "app-icons" / f"{launcher}-{slug(_app_name(launcher))}.png"
+    if cached.exists():
+        return cached.read_bytes()
+    bundle = _app_bundle(launcher)
+    if bundle is None:
+        return None
+    try:
+        info = plistlib.loads((bundle / "Contents" / "Info.plist").read_bytes())
+    except (OSError, plistlib.InvalidFileException):
+        return None
+    icon_file = str(info.get("CFBundleIconFile") or "")
+    icns = bundle / "Contents" / "Resources" / (icon_file if icon_file.endswith(".icns") else f"{icon_file}.icns")
+    if not icon_file or not icns.exists():
+        return None
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(["sips", "-s", "format", "png", "-Z", "64", str(icns), "--out", str(cached)], capture_output=True)
+    return cached.read_bytes() if r.returncode == 0 and cached.exists() else None
 
 
 DESKTOP_SESSIONS = Path.home() / "Library" / "Application Support" / "Claude" / "claude-code-sessions"
