@@ -1,0 +1,1302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chief of Staff</title>
+<style>
+/* Design tokens from console-next/app/globals.css (Console v2). Fonts: Inter + Reddit Mono (OFL),
+   Console's own fallbacks; its brand face (FT Regola Neue) is licensed and not bundled. */
+@font-face { font-family: "Inter"; src: url("/fonts/inter.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Reddit Mono"; src: url("/fonts/reddit-mono.woff2") format("woff2"); font-weight: 200 900; font-display: swap; }
+
+:root {
+  --ground: oklch(.955 .005 106.5);
+  --background: #fefefd;
+  --card: #fff;
+  --foreground: oklch(.153 .006 107.1);
+  --muted-foreground: #676863;
+  --muted: oklch(.966 .005 106.5);
+  --border: oklch(.93 .007 106.5);
+  --input: oklch(.93 .007 106.5);
+  --ring: oklch(.737 .021 106.9);
+  --primary: oklch(.228 .013 107.4);
+  --primary-foreground: oklch(.988 .003 106.5);
+  --destructive: oklch(.577 .245 27.3);
+  --brand: #0888ee;
+  --sidebar-accent: oklch(.975 .004 106.5);
+  --green-bg: #f0fdf4;  --green-fg: #15803d;  --green-solid: #22c55e;
+  --yellow-bg: #fefce8; --yellow-fg: #a16207; --yellow-solid: #eab308;
+  --red-bg: #fef2f2;    --red-fg: #b91c1c;    --red-solid: #ef4444;
+  --blue-bg: #eff6ff;   --blue-fg: #1d4ed8;   --blue-solid: #3b82f6;
+  --gray-bg: oklch(.95 .006 106.5); --gray-fg: oklch(.34 .013 107.4); --gray-solid: oklch(.737 .021 106.9);
+  --radius: .45rem;
+  --panel-shadow: 1px 1px 2px 0 oklch(.153 .006 107.1/.06), 2px 3px 6px -2px oklch(.153 .006 107.1/.045);
+  --card-shadow: 0 10px 20px -10px oklch(.3058 .0375 107.1/.04), 0 2px 6px -2px oklch(.3058 .0375 107.1/.04), 0 0 1px 0 oklch(.3058 .0375 107.1/.04);
+  --sheet-shadow: 0 25px 50px -12px rgb(0 0 0 / .25);
+  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: "Reddit Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+  --pane-bg: var(--card); --pane-card: var(--muted); --pane-input: var(--background); --pane-foot: var(--ground);
+  --pane-text: var(--foreground); --pane-muted: var(--muted-foreground); --pane-border: var(--input);
+  --pane-line: var(--border); --pane-secondary: var(--muted); --pane-primary: var(--primary);
+  --pane-primary-fg: var(--primary-foreground); --pane-p0: var(--red-solid); --pane-p1: #E3A93A; --pane-p2: var(--gray-solid);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: oklch(.115 .005 107.1);
+    --background: oklch(.153 .006 107.1);
+    --card: oklch(.228 .013 107.4);
+    --foreground: oklch(.988 .003 106.5);
+    --muted-foreground: oklch(.737 .021 106.9);
+    --muted: oklch(.286 .016 107.4);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(.58 .031 107.3);
+    --primary: oklch(.93 .007 106.5);
+    --primary-foreground: oklch(.228 .013 107.4);
+    --destructive: oklch(.704 .191 22.2);
+    --sidebar-accent: oklch(.228 .013 107.4);
+    --green-bg: #052e16;  --green-fg: #86efac;
+    --yellow-bg: #422006; --yellow-fg: #fde047;
+    --red-bg: #450a0a;    --red-fg: #fca5a5;
+    --blue-bg: #172554;   --blue-fg: #93c5fd;
+    --gray-bg: oklch(.28 .016 107.4); --gray-fg: oklch(.84 .013 106.9);
+    --panel-shadow: 1px 1px 2px 0 rgb(0 0 0/.28), 2px 3px 6px -2px rgb(0 0 0/.21);
+    --card-shadow: 0 10px 20px -10px rgb(0 0 0/.5), 0 2px 6px -2px rgb(0 0 0/.4), 0 0 1px 0 rgb(0 0 0/.45);
+    color-scheme: dark;
+    --pane-bg: #1E1D1A; --pane-card: #2A2925; --pane-input: #121210; --pane-foot: #1B1A18;
+    --pane-text: #ECEAE4; --pane-muted: #A3A097; --pane-border: #3A3934; --pane-line: #36352F;
+    --pane-secondary: #2C2B27; --pane-primary: #E9E7E1; --pane-primary-fg: #1E1D1A; --pane-p1: #E3A93A;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--ground); color: var(--foreground); font: 400 14px/1.45 var(--sans);
+       -webkit-font-smoothing: antialiased; }
+b, strong { font-weight: 500; }
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.mono { font-family: var(--mono); font-weight: 400; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted-foreground); }
+
+/* Shell: panels on the ground, 3px gaps, 8px radius */
+.shell { display: grid; grid-template-columns: 230px minmax(0, 1fr); grid-template-rows: 56px minmax(0, 1fr);
+         gap: 3px; padding: 3px; height: 100vh; }
+.panel { background: var(--background); border-radius: 8px; box-shadow: var(--panel-shadow); }
+.topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.brand-mark { width: 24px; height: 24px; border-radius: 7px; background: var(--brand); display: grid; place-items: center; color: #fff; }
+.topbar-meta { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.sidebar { padding: 12px 8px; overflow-y: auto; }
+.nav-group { font-size: 11px; line-height: 16px; font-weight: 500; color: var(--muted-foreground); padding: 12px 8px 4px; }
+.nav-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border-radius: 7px; border: 0;
+           background: transparent; color: var(--foreground); font: 400 14px var(--sans); cursor: pointer; text-align: left; position: relative; }
+.nav-row:hover { background: var(--muted); }
+.nav-row[aria-current="page"] { background: var(--sidebar-accent); font-weight: 500; }
+.nav-row[aria-current="page"]::before { content: ""; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--brand); }
+.nav-row svg { flex: none; color: var(--muted-foreground); }
+.nav-count { margin-left: auto; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.main { overflow-y: auto; }
+.page { max-width: 1200px; margin: 0 auto; padding: 24px 48px 48px; }
+
+/* Page header + toolbar */
+.page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 24px; }
+h1 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -.025em; margin: 0; }
+.page-sub { font-size: 14px; color: var(--muted-foreground); margin-top: 4px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.section-header { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--muted-foreground); margin: 28px 0 10px; }
+
+/* Segmented control */
+.tabs { display: inline-flex; background: var(--muted); padding: 2px; border-radius: 9999px; height: 36px; }
+.tab { border: 0; background: transparent; color: var(--muted-foreground); font: 500 13px var(--sans); padding: 0 14px;
+       border-radius: 9999px; cursor: pointer; transition: background .37s cubic-bezier(.32,1.16,.64,1), color .2s; }
+.tab[aria-pressed="true"] { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgb(0 0 0/.06); }
+.tab .tab-count { margin-left: 6px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.select { height: 36px; padding: 0 12px; border: 1px solid var(--input); border-radius: calc(var(--radius) + .3rem);
+          background: var(--background); color: var(--foreground); font: 500 13px var(--sans); }
+
+/* Badges */
+.badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 2px 8px; border-radius: 9999px;
+         font: 500 12px/1 var(--sans); white-space: nowrap; }
+.tone-green { background: var(--green-bg); color: var(--green-fg); }
+.tone-yellow { background: var(--yellow-bg); color: var(--yellow-fg); }
+.tone-red { background: var(--red-bg); color: var(--red-fg); }
+.tone-blue { background: var(--blue-bg); color: var(--blue-fg); }
+.tone-gray { background: var(--gray-bg); color: var(--gray-fg); }
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.pri { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 12px;
+       border-radius: calc(var(--radius) + .3rem); font: 500 14px var(--sans); border: 1px solid transparent; cursor: pointer;
+       transition: all .15s; white-space: nowrap; }
+.btn:active { transform: scale(.97); }
+.btn:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent); }
+.btn:disabled { opacity: .5; cursor: default; transform: none; }
+.btn-primary { background: var(--primary); color: var(--primary-foreground); }
+.btn-primary:hover:not(:disabled) { background: color-mix(in oklab, var(--primary) 88%, transparent); }
+.btn-outline { border-color: var(--border); background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgb(0 0 0/.05); }
+.btn-outline:hover:not(:disabled) { background: var(--muted); }
+.btn-ghost { background: transparent; color: var(--foreground); }
+.btn-ghost:hover { background: var(--muted); }
+.btn-destructive { background: color-mix(in oklab, var(--destructive) 10%, transparent); color: var(--destructive); }
+.btn-destructive:hover:not(:disabled) { background: color-mix(in oklab, var(--destructive) 18%, transparent); }
+.btn-sm { height: 32px; padding: 0 10px; font-size: 13px; border-radius: 10px; }
+.btn-xs { height: 24px; padding: 0 8px; font-size: 12px; border-radius: 7px; }
+.btn-icon { width: 32px; height: 32px; padding: 0; border-radius: 7px; }
+
+/* Table card */
+.table-card { background: var(--card); border-radius: 13px; overflow: hidden; box-shadow: var(--card-shadow), 0 0 0 1px var(--border); }
+table { width: 100%; border-collapse: collapse; }
+th { height: 44px; padding: 0 16px; text-align: left; font-size: 12px; line-height: 16px; font-weight: 500;
+     color: var(--muted-foreground); border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 12px 16px; font-size: 14px; vertical-align: middle; border-bottom: 1px solid var(--border); }
+tbody tr:last-child td { border-bottom: 0; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover, tr.current { background: color-mix(in oklab, var(--muted) 60%, transparent); }
+tr.selected { box-shadow: inset 3px 0 0 var(--brand); }
+.cell-title { font-weight: 500; overflow-wrap: anywhere; }
+.cell-sub { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; }
+.item-cell { display: flex; gap: 10px; align-items: flex-start; }
+.source-mark { flex: none; border-radius: 4px; margin-top: 1px; }
+.source-mark.glyph { display: inline-grid; place-items: center; background: var(--gray-bg); color: var(--gray-fg); }
+.badge .source-mark { margin-top: 0; }
+.right { text-align: right; }
+.empty { text-align: center; padding: 48px 24px; }
+.empty-tile { width: 40px; height: 40px; border-radius: 10px; background: color-mix(in oklab, var(--muted) 70%, transparent);
+              display: grid; place-items: center; margin: 0 auto 16px; color: var(--muted-foreground); }
+.empty-title { font-size: 18px; font-weight: 500; letter-spacing: -.01em; }
+.empty-desc { color: var(--muted-foreground); margin-top: 4px; }
+
+/* Cards + stats */
+.card { background: var(--card); border-radius: 10px; padding: 20px 24px; box-shadow: var(--card-shadow), 0 0 0 1px var(--border); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.stat-label { font-size: 13px; color: var(--muted-foreground); font-weight: 500; }
+.stat-value { font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 6px; }
+.stat-foot { font-size: 12px; color: var(--muted-foreground); margin-top: 6px; }
+.meter { height: 6px; border-radius: 9999px; background: var(--muted); overflow: hidden; margin-top: 10px; }
+.meter > span { display: block; height: 100%; border-radius: 9999px; background: var(--green-solid); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; font-size: 14px; }
+.kv dt { color: var(--muted-foreground); }
+.kv dd { margin: 0; }
+.bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--brand); vertical-align: middle; margin-right: 8px; min-width: 2px; }
+
+/* Sheet */
+.backdrop { position: fixed; inset: 0; background: linear-gradient(oklch(.153 .014 265/.07), oklch(.153 .014 265/.18)); z-index: 10; }
+.sheet { position: fixed; top: 8px; right: 8px; bottom: 8px; width: min(680px, calc(100vw - 16px)); z-index: 11;
+         background: var(--pane-bg); color: var(--pane-text); border: 1px solid var(--pane-border); border-radius: 20px;
+         box-shadow: var(--sheet-shadow); overflow: hidden;
+         display: flex; flex-direction: column; transform: translateX(0); transition: transform 320ms cubic-bezier(.32,.72,0,1); }
+.sheet[hidden], .backdrop[hidden] { display: none; }
+
+/* Item pane */
+.pane-head { padding: 18px 28px 24px; display: flex; flex-direction: column; gap: 12px; }
+.pane-meta { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--pane-muted); }
+.pane-pri { display: flex; align-items: center; gap: 6px; color: var(--pane-text); font-variant-numeric: tabular-nums; }
+.pri-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pane-p1); }
+.pri-dot.p0 { background: var(--pane-p0); } .pri-dot.p2 { background: var(--pane-p2); }
+.pane-close { margin: -4px -12px -4px auto; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+              background: none; border: 0; border-radius: 10px; color: var(--pane-muted); cursor: pointer; }
+.pane-close:hover { color: var(--pane-text); background: var(--pane-secondary); }
+.pane-title { margin: 0; font-size: 22px; line-height: 1.3; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.pane-sub { font-size: 14px; color: var(--pane-muted); }
+.sheet .btn { height: 40px; border-radius: 10px; font-size: 14px; }
+.sheet .btn-primary { background: var(--pane-primary); color: var(--pane-primary-fg); }
+.sheet .btn-outline { background: transparent; border-color: var(--pane-border); color: var(--pane-text); box-shadow: none; }
+.sheet .btn-outline:hover:not(:disabled) { background: var(--pane-secondary); }
+.sheet .btn-ghost:hover { background: var(--pane-secondary); }
+.pane-source.btn-outline { align-self: flex-start; margin-top: 4px; gap: 8px; padding: 0 14px; background: var(--pane-secondary); }
+.pane-body { flex: 1; overflow-y: auto; padding: 0 28px 28px; display: flex; flex-direction: column; gap: 32px; }
+.pane-section { display: flex; flex-direction: column; gap: 12px; }
+.pane-section-head { display: flex; align-items: center; justify-content: space-between; min-height: 40px; margin: -8px 0; }
+.pane-label { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--pane-muted); }
+.timeline { background: var(--pane-card); border-radius: 14px; padding: 6px 18px; }
+.tl-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 12px 0; font-size: 14px; line-height: 1.5; }
+.tl-row + .tl-row { border-top: 1px solid var(--pane-line); }
+.timeline.no-time .tl-row { grid-template-columns: minmax(0, 1fr); }
+.tl-time { color: var(--pane-muted); font-variant-numeric: tabular-nums; }
+.pane-new { gap: 6px; padding: 0 6px; font-weight: 500; }
+.session-list { border: 1px solid var(--pane-border); border-radius: 14px; }
+.session-row { display: flex; align-items: center; gap: 12px; padding: 8px 6px 8px 16px; }
+.session-row + .session-row { border-top: 1px solid var(--pane-line); }
+.session-row > svg { flex: none; color: var(--pane-muted); }
+.session-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.session-name { font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-meta { font-size: 13px; color: var(--pane-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet .session-resume { flex: none; height: 44px; color: var(--pane-muted); font-size: 13px; }
+.row-menu { position: relative; flex: none; }
+.row-menu > summary { list-style: none; width: 36px; height: 44px; display: flex; align-items: center; justify-content: center;
+                      border-radius: 8px; color: var(--pane-muted); cursor: pointer; }
+.row-menu > summary::-webkit-details-marker { display: none; }
+.row-menu > summary:hover { background: var(--pane-secondary); }
+.row-menu-pop { position: absolute; right: 0; top: 42px; z-index: 2; min-width: 200px; padding: 4px; border-radius: 10px;
+                background: var(--pane-card); border: 1px solid var(--pane-border); box-shadow: var(--card-shadow); }
+.row-menu-pop button { width: 100%; height: 40px; text-align: left; padding: 0 10px; border: 0; border-radius: 6px; background: none;
+                       color: var(--pane-text); font: 14px var(--sans); cursor: pointer; }
+.row-menu-pop button:hover { background: var(--pane-secondary); }
+.pane-empty { font-size: 14px; color: var(--pane-muted); padding: 14px 16px; border: 1px dashed var(--pane-border); border-radius: 14px; }
+.new-session { border: 1px solid var(--pane-border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px;
+               background: color-mix(in oklab, var(--pane-bg) 85%, var(--pane-card)); }
+.new-session-label { font-size: 13px; color: var(--pane-muted); }
+.sheet textarea, .sheet .select { background: var(--pane-input); color: var(--pane-text); border-color: var(--pane-border); border-radius: 10px; }
+.new-session textarea { min-height: 120px; font-size: 14px; }
+.new-session-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sheet .select { height: 40px; font-size: 14px; font-weight: 400; }
+.check { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 13.5px; color: var(--pane-muted); cursor: pointer; }
+.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--pane-primary); }
+.ws-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ws-row .select { flex: 1; min-width: 220px; }
+.pane-foot { border-top: 1px solid var(--pane-border); background: var(--pane-foot); padding: 18px 28px 22px; display: flex; flex-direction: column; gap: 14px; }
+.lead-input { display: flex; align-items: center; gap: 8px; padding: 0 4px 0 14px; border: 1px solid var(--pane-border); border-radius: 12px;
+              background: var(--pane-input); }
+.lead-input:focus-within { border-color: var(--ring); }
+.sheet input.lead-input-field { flex: 1; min-width: 0; height: 44px; padding: 0; border: 0; background: none; box-shadow: none;
+                                font-size: 14.5px; color: var(--pane-text); }
+.lead-send { flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px;
+             background: var(--pane-secondary); color: var(--pane-text); cursor: pointer; }
+.pane-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sheet .pane-actions .btn { height: 44px; border-radius: 12px; font-size: 15px; }
+.pane-hint { font-size: 13px; color: var(--pane-muted); }
+.instruct { display: flex; gap: 8px; }
+.instruct input { flex: 1; }
+.working { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; padding: 12px 14px; border-radius: 12px;
+           background: var(--blue-bg); color: var(--blue-fg); overflow-wrap: anywhere; }
+.spinner { flex: none; width: 16px; height: 16px; margin-top: 1px; border-radius: 50%; border: 2px solid currentColor;
+           border-right-color: transparent; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.summary { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.55; padding: 12px 14px;
+           border-radius: 12px; background: var(--muted); }
+.sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.field-label { font-size: 12px; font-weight: 500; color: var(--muted-foreground); margin-bottom: 6px; display: flex; justify-content: space-between; }
+textarea, input[type=text] { width: 100%; font: 13.5px/1.5 Inter, var(--sans); color: var(--foreground); background: var(--background);
+           border: 1px solid var(--input); border-radius: calc(var(--radius) + .3rem); padding: 10px 12px; }
+textarea { min-height: 180px; resize: vertical; }
+input[type=text] { height: 36px; padding: 4px 12px; }
+textarea:hover, input[type=text]:hover { border-color: color-mix(in oklab, var(--foreground) 20%, transparent); }
+textarea:focus, input[type=text]:focus { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent); }
+textarea[readonly] { background: var(--muted); }
+details.panel-box { border: 1px solid var(--border); border-radius: 12px; }
+details.panel-box > summary { padding: 10px 14px; font-size: 13px; font-weight: 500; cursor: pointer; list-style: none; display: flex; justify-content: space-between; }
+details.panel-box > summary::after { content: "Show"; color: var(--muted-foreground); font-weight: 400; }
+details.panel-box[open] > summary::after { content: "Hide"; }
+details.panel-box > pre { margin: 0; padding: 12px 14px; border-top: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere;
+                          font: 13px/1.5 var(--sans); color: var(--foreground); }
+.error { font-size: 13px; padding: 10px 12px; border-radius: 10px; background: var(--red-bg); color: var(--red-fg); overflow-wrap: anywhere; }
+.sessions { display: grid; gap: 8px; }
+.session { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.session-head { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; }
+.session-title { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
+.session-why, .session .cell-sub { font-size: 13px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.session .cell-sub { font-size: 12px; }
+.session-cmd { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.session-cmd code { flex: 1 1 240px; min-width: 0; font: 12px/1.4 var(--mono); padding: 6px 8px; border-radius: 8px; background: var(--muted);
+                    white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Workstreams */
+.nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red-solid); flex: none; }
+.nav-row .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-row .spinner { width: 12px; height: 12px; margin: 0; color: var(--blue-solid); }
+.ws-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.ws-col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.card-title { font-size: 14px; font-weight: 500; display: flex; gap: 8px; align-items: center; }
+.card-title svg { color: var(--muted-foreground); }
+.card-meta { font-size: 12px; color: var(--muted-foreground); }
+.rows { display: grid; }
+.row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border); }
+.row:first-child { border-top: 0; padding-top: 0; }
+.row:last-child { padding-bottom: 0; }
+.row-main { flex: 1; min-width: 0; }
+.row-title { font-weight: 500; overflow-wrap: anywhere; }
+.row-text { overflow-wrap: anywhere; }
+.row-sub { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; overflow-wrap: anywhere; }
+.row-actions { display: flex; gap: 4px; flex: none; align-items: center; }
+.row.clickable { cursor: pointer; }
+.row.clickable:hover .row-title { text-decoration: underline; }
+.subhead { font-size: 12px; font-weight: 500; color: var(--muted-foreground); margin: 16px 0 8px; }
+.inline-form { display: flex; gap: 8px; margin-top: 14px; }
+.inline-form input { flex: 1; min-width: 0; }
+.form-grid { display: grid; gap: 12px; }
+.form-grid textarea { min-height: 90px; }
+.instr { font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--muted); overflow-wrap: anywhere; }
+.instr .muted { font-size: 12px; }
+.prose { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.55; }
+@media (max-width: 1000px) { .ws-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .row { flex-wrap: wrap; } .row-actions { margin-left: auto; } }
+
+/* Toasts */
+.toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 20; }
+.toast { max-width: 384px; padding: 12px 16px; border-radius: 16px; background: var(--card); border: 1px solid var(--border);
+         box-shadow: var(--sheet-shadow); font-size: 14px; animation: rise .2s ease-out; }
+@keyframes rise { from { transform: translateY(8px); opacity: 0; } }
+kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--card); }
+.hint { font-size: 12px; color: var(--muted-foreground); margin-top: 16px; text-align: center; }
+
+@media (max-width: 760px) {
+  .shell { grid-template-columns: 1fr; grid-template-rows: 56px auto minmax(0, 1fr); height: auto; min-height: 100vh; }
+  .sidebar { display: flex; gap: 4px; overflow-x: auto; padding: 6px; }
+  .nav-group { display: none; }
+  .nav-row { width: auto; white-space: nowrap; }
+  .nav-row[aria-current="page"]::before { display: none; }
+  .page { padding: 16px; }
+  .page-header { flex-direction: column; align-items: flex-start; }
+  .hide-sm { display: none; }
+  td, th { padding-left: 12px; padding-right: 12px; }
+  .topbar-meta .hide-sm { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar panel">
+    <div class="brand"><span class="brand-mark" id="brandMark"></span>Chief of Staff</div>
+    <div class="topbar-meta"><span id="topSpend" class="muted num"></span><span id="topSched"></span></div>
+  </header>
+  <nav class="sidebar panel" id="sidebar" aria-label="Main"></nav>
+  <main class="main panel"><div class="page" id="page"></div></main>
+</div>
+<div class="backdrop" id="backdrop" hidden></div>
+<aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden></aside>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script>
+const TOKEN = "__COS_TOKEN__";
+
+// Icons: Lucide-style 24px strokes at 1.8, inline so nothing loads from the network.
+const ICON_PATHS = {
+  inbox: "M22 12h-6l-2 3h-4l-2-3H2|M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z",
+  archive: "M21 8v13H3V8|M1 3h22v5H1z|M10 12h4",
+  book: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20|M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z",
+  activity: "M22 12h-4l-3 9L9 3l-3 9H2",
+  x: "M18 6 6 18|M6 6l12 12",
+  send: "M22 2 11 13|M22 2l-7 20-4-9-9-4 20-7z",
+  link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71|M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
+  alert: "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z|M12 9v4|M12 17h.01",
+  check: "M20 6 9 17l-5-5",
+  chat: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+  plan: "M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2|M9 3h6v4H9z|M9 12h6|M9 16h4",
+  terminal: "M4 17l6-6-6-6|M12 19h8",
+  mail: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z|M22 6l-10 7L2 6",
+  external: "M7 17 17 7|M8 7h9v9",
+  copy: "M9 9h11v11H9z|M5 15H4V4h11v1",
+  more: "M5 12h.01|M12 12h.01|M19 12h.01",
+  chevron: "M6 9l6 6 6-6",
+  arrowUp: "M12 19V5|M5 12l7-7 7 7",
+  layers: "M12 2 2 7l10 5 10-5-10-5z|M2 17l10 5 10-5|M2 12l10 5 10-5",
+  plus: "M12 5v14|M5 12h14",
+  target: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z|M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12z|M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
+  clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z|M12 6v6l4 2",
+  eye: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z|M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  spark: "M12 3v4|M12 17v4|M3 12h4|M17 12h4|M5.6 5.6l2.8 2.8|M15.6 15.6l2.8 2.8|M5.6 18.4l2.8-2.8|M15.6 8.4l2.8-2.8",
+};
+function icon(name, size = 18) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [k, v] of Object.entries({ width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+    "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
+  for (const d of ICON_PATHS[name].split("|")) { const p = document.createElementNS(ns, "path"); p.setAttribute("d", d); svg.append(p); }
+  return svg;
+}
+
+// Never innerHTML: agent text comes from Slack/Switchboard content and is untrusted.
+function el(tag, attrs = {}, ...children) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) n.append(c instanceof Node ? c : String(c));
+  return n;
+}
+function safeUrl(u) {
+  try { const p = new URL(u); return (p.protocol === "https:" || p.protocol === "http:") ? p.href : null; } catch { return null; }
+}
+function ago(iso) {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+const money = v => "$" + Number(v || 0).toFixed(2);
+function toast(msg) {
+  const t = el("div", { class: "toast" }, msg);
+  document.getElementById("toasts").append(t);
+  setTimeout(() => t.remove(), 3200);
+}
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { "X-COS-Token": TOKEN, "Content-Type": "application/json" } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+
+const STATUS = {
+  pending: ["Needs review", "yellow"], changes_requested: ["With lead", "blue"], approved: ["Approved", "green"],
+  executing: ["Sending", "blue"], done: ["Done", "green"], failed: ["Failed", "red"], rejected: ["Rejected", "red"],
+  dismissed: ["Dismissed", "gray"],
+};
+const RUN_STATUS = { ok: ["OK", "green"], error: ["Error", "red"], running: ["Running", "blue"], dry_run: ["Dry run", "gray"] };
+// P0 urgent, P1 needs you, P2 FYI. Lower sorts first.
+const PRI = { 0: ["P0", "var(--red-solid)"], 1: ["P1", "var(--yellow-solid)"], 2: ["P2", "var(--gray-solid)"] };
+const badge = ([label, tone]) => el("span", { class: `badge tone-${tone}` }, label);
+const statusBadge = s => badge(STATUS[s] || [s, "gray"]);
+const pri = p => el("span", { class: "pri" }, el("span", { class: "dot", style: `background:${PRI[p][1]}` }), PRI[p][0]);
+const EFFECTS = {
+  gmail_draft: a => `Creates a Gmail draft${a.thread_id ? " on thread " + a.thread_id : ""}. You send it yourself.`,
+  slack_reply: a => `Posts to Slack ${a.channel_id || a.channel || "?"}${a.thread_ts ? " in thread " + a.thread_ts : ""}.`,
+  github_comment: a => `Comments on ${a.repo || "?"}#${a.number || "?"}.`,
+  github_review: a => `Submits a review on ${a.repo || "?"}#${a.number || "?"}.`,
+  notion_comment: a => `Comments on Notion page ${a.page_id || "?"}.`,
+  notion_suggest_edit: a => `Suggests an edit on Notion page ${a.page_id || "?"}.`,
+  switchboard_reply: a => `Comments on Switchboard plan ${a.plan_id || "?"}${a.thread_id ? " in thread " + a.thread_id : ""}, then hands the plan back to Switchboard.`,
+  switchboard_approve_phase: a => `Approves ${(a.phase || "?").replace("_", " ")} of Switchboard plan ${a.plan_id || "?"} as you.`,
+  switchboard_close_plan: a => `Closes Switchboard plan ${a.plan_id || "?"} and stops its loop. This can't be undone from here.`,
+};
+const NEEDS_REVIEW = ["pending", "changes_requested"];
+
+const state = { route: { page: "queue", id: null }, queue: null, recent: null, runs: null, ws: null,
+                source: "all", sel: 0, notes: {}, prompts: {}, workdirs: {}, worktrees: {}, promptOpen: {},
+                launching: new Set(), working: new Map(), pollTimer: null,
+                form: {}, editCharter: false, wsWasRunning: false };
+
+function parseHash() {
+  const [page, id] = location.hash.replace(/^#\/?/, "").split("/");
+  const known = ["queue", "closed", "rules", "runs", "workstreams"].includes(page) || /^ws:\d+$/.test(page || "");
+  return { page: known ? page : "queue", id: id ? Number(id) : null };
+}
+const wsIdOf = page => (page || "").startsWith("ws:") ? Number(page.slice(3)) : null;
+function go(page, id = null) { location.hash = `#/${page}${id ? "/" + id : ""}`; }
+
+async function load() {
+  try {
+    const wsId = wsIdOf(state.route.page);
+    const [queue, runs, ws] = await Promise.all([api("/api/queue" + (state.route.page === "closed" ? "?recent=1" : "")), api("/api/runs"),
+      wsId ? api(`/api/workstreams/${wsId}`) : null]);
+    state.queue = queue; state.runs = runs; state.ws = ws;
+    if (ws && state.wsWasRunning && !ws.running) toast(`The ${ws.workstream.name} lead finished`);
+    state.wsWasRunning = !!(ws && ws.running);
+    render();
+    // Fast refresh while something is sending or a lead is working on an instruction.
+    const open = [...queue.items, ...(ws ? ws.items : [])];
+    for (const [id, since] of [...state.working]) {
+      const it = open.find(i => i.id === id);
+      if (!it || it.status !== "changes_requested") {
+        state.working.delete(id);
+        if (it) toast(`#${id}: the ${it.lead} lead's proposal is ready`);
+      } else if (Date.now() - since > 5 * 60 * 1000) {
+        state.working.delete(id);  // stop fast polling; the next tick retries the lead
+        toast(`#${id}: still with the ${it.lead} lead. It will be retried on the next tick.`);
+      }
+    }
+    clearTimeout(state.pollTimer);
+    if (open.some(i => i.status === "executing") || state.working.size || (ws && ws.running)) state.pollTimer = setTimeout(load, 4000);
+  } catch (e) { toast("Couldn't load: " + e.message); }
+}
+
+function renderChrome() {
+  const q = state.queue, r = state.runs;
+  const count = s => q.items.filter(i => s.includes(i.status)).length;
+  const nav = [
+    ["queue", "Queue", "inbox", count(NEEDS_REVIEW)],
+    ["closed", "Recently closed", "archive", null],
+    ["rules", "Rules", "book", q.rules.filter(x => x.status === "provisional").length || null],
+    ["runs", "Runs & costs", "activity", r.summary.reduce((n, s) => n + (s.last_status === "error" ? 1 : 0), 0) || null],
+  ];
+  const side = document.getElementById("sidebar");
+  const streams = q.workstreams.filter(w => w.status !== "archived");
+  side.replaceChildren(el("div", { class: "nav-group" }, "Workspace"),
+    ...nav.map(([page, label, ic, n]) => el("button", {
+      class: "nav-row", "aria-current": state.route.page === page ? "page" : null, onclick: () => go(page) },
+      icon(ic), label, n ? el("span", { class: "nav-count" }, n) : null)),
+    el("div", { class: "nav-group" }, "Workstreams"),
+    ...streams.map(w => el("button", {
+      class: "nav-row", "aria-current": state.route.page === `ws:${w.id}` ? "page" : null, onclick: () => go(`ws:${w.id}`),
+      title: w.status === "paused" ? `${w.name} (paused)` : w.name },
+      icon("layers"), el("span", { class: "nav-label" + (w.status === "paused" ? " muted" : "") }, w.name),
+      w.running ? el("span", { class: "spinner", "aria-label": "lead working" }) : null,
+      w.urgent ? el("span", { class: "nav-dot", title: `${w.urgent} urgent`, "aria-label": `${w.urgent} urgent` }) : null,
+      w.needs_review ? el("span", { class: "nav-count" }, w.needs_review) : null)),
+    el("button", { class: "nav-row", "aria-current": state.route.page === "workstreams" ? "page" : null, onclick: () => go("workstreams") },
+      icon("plus"), streams.length ? "All workstreams" : "New workstream"));
+  const pct = r.today_cost_usd / r.daily_cap_usd;
+  document.getElementById("topSpend").textContent = `Today ${money(r.today_cost_usd)} of ${money(r.daily_cap_usd)}`;
+  const jobs = Object.values(r.schedule.jobs);
+  const sched = jobs.every(Boolean) ? (r.schedule.until ? ["Scheduled until " + new Date(r.schedule.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), "green"] : ["Scheduled", "green"])
+    : jobs.some(Boolean) ? ["Schedule partial", "yellow"] : ["Not scheduled", "gray"];
+  const s = document.getElementById("topSched");
+  s.replaceChildren(badge(sched));
+}
+
+function pageHeader(title, sub, ...actions) {
+  return el("div", { class: "page-header" },
+    el("div", {}, el("h1", {}, title), sub ? el("div", { class: "page-sub" }, sub) : null),
+    actions.length ? el("div", { class: "sheet-actions" }, ...actions) : null);
+}
+function emptyState(ic, title, desc) {
+  return el("div", { class: "empty" }, el("div", { class: "empty-tile" }, icon(ic, 20)),
+    el("div", { class: "empty-title" }, title), el("div", { class: "empty-desc" }, desc));
+}
+
+// One tab per surface lead; items from anything else (the chief of staff's findings) show only under All.
+function sourceTabs() {
+  return (state.queue.leads || []).filter(l => l !== "workstream");
+}
+
+const sourceOf = it => it.source_lead || it.lead;
+
+function queueItems() {
+  return state.queue.items.filter(i => state.source === "all" || sourceOf(i) === state.source);
+}
+
+function pageItems() {
+  return wsIdOf(state.route.page) ? (state.ws ? state.ws.items : []) : queueItems();
+}
+
+function queueSummary(items) {
+  const n = s => items.filter(i => s.includes(i.status)).length;
+  return `${n(NEEDS_REVIEW)} need review · ${n(["approved"])} approved, not sent` + (n(["failed"]) ? ` · ${n(["failed"])} failed` : "");
+}
+
+function itemTable(items, { selectable }) {
+  const showWs = !wsIdOf(state.route.page);
+  const wsCell = it => {
+    const w = it.workstream_id && state.queue.workstreams.find(x => x.id === it.workstream_id);
+    return el("td", { class: "hide-sm" }, w ? el("a", { href: `#/ws:${w.id}`, onclick: e => e.stopPropagation() }, w.name) : null);
+  };
+  const rows = items.map((it, idx) => {
+    const tr = el("tr", { class: "clickable" + (selectable && idx === state.sel ? " selected" : "") + (state.route.id === it.id ? " current" : ""),
+      onclick: () => go(state.route.page, it.id) },
+      el("td", { class: "hide-sm" }, pri(it.priority)),
+      el("td", {}, el("div", { class: "item-cell" }, sourceMark(sourceOf(it)), el("div", {},
+        el("div", { class: "cell-title" }, it.title),
+        el("div", { class: "cell-sub" }, `#${it.id} · ${it.lead} · ${it.kind}${it.action ? " · " + it.action.type.replace(/_/g, " ") : ""}`
+          + (it.prompt && !it.launched_at ? " · agent prompt" : "")
+          + (it.sessions?.length ? ` · ${it.sessions.length} Claude session${it.sessions.length > 1 ? "s" : ""}` : ""))))),
+      showWs ? wsCell(it) : null,
+      el("td", {}, statusBadge(it.status)),
+      el("td", { class: "right muted num hide-sm" }, ago(it.executed_at || it.decided_at || it.created_at)));
+    return tr;
+  });
+  return el("div", { class: "table-card" }, el("table", {},
+    el("thead", {}, el("tr", {}, el("th", { class: "hide-sm", style: "width:64px" }, "Priority"), el("th", {}, "Item"),
+      showWs ? el("th", { class: "hide-sm", style: "width:160px" }, "Workstream") : null,
+      el("th", { style: "width:130px" }, "Status"), el("th", { class: "right hide-sm", style: "width:110px" }, "Updated"))),
+    el("tbody", {}, rows)));
+}
+
+function renderQueue() {
+  const all = state.queue.items;
+  const n = s => all.filter(i => s.includes(i.status)).length;
+  const tabs = [["all", "All", all.length],
+                ...sourceTabs().map(l => [l, l.charAt(0).toUpperCase() + l.slice(1), all.filter(i => sourceOf(i) === l).length])];
+  if (!tabs.some(([k]) => k === state.source)) state.source = "all";
+  const items = queueItems();
+  state.sel = Math.min(state.sel, Math.max(items.length - 1, 0));
+  const sub = queueSummary(all);
+  return [
+    pageHeader("Queue", sub, el("button", { class: "btn btn-outline btn-sm", onclick: load }, "Refresh")),
+    el("div", { class: "toolbar" },
+      el("div", { class: "tabs", role: "group", "aria-label": "Source" }, tabs.map(([k, label, c]) =>
+        el("button", { class: "tab", "aria-pressed": String(state.source === k), onclick: () => { state.source = k; state.sel = 0; render(); } },
+          label, el("span", { class: "tab-count" }, c))))),
+    items.length ? itemTable(items, { selectable: true })
+      : el("div", { class: "table-card" }, emptyState("check", "Nothing here",
+          state.source === "all" ? "Nothing in the queue needs you." : `Nothing from ${state.source} needs you.`)),
+    el("div", { class: "hint" }, el("kbd", {}, "j"), " ", el("kbd", {}, "k"), " move · ", el("kbd", {}, "Enter"), " open · ",
+      el("kbd", {}, "a"), " approve · ", el("kbd", {}, "Esc"), " close · ", el("kbd", {}, "r"), " refresh"),
+  ];
+}
+
+function renderClosed() {
+  const items = state.queue.recent || [];
+  return [pageHeader("Recently closed", "Sent, done, rejected and dismissed items, newest first"),
+    items.length ? itemTable(items, { selectable: false }) : el("div", { class: "table-card" }, emptyState("archive", "Nothing closed yet", "Items you approve, send, reject or dismiss show up here."))];
+}
+
+function renderRules() {
+  const rules = state.queue.rules;
+  const rows = rules.map(r => {
+    const prov = r.status === "provisional";
+    return el("tr", {},
+      el("td", {}, el("div", { class: "cell-title" }, r.text), el("div", { class: "cell-sub" }, "Why: " + r.why)),
+      el("td", { class: "hide-sm" }, r.agent),
+      el("td", {}, badge(prov ? ["Provisional", "yellow"] : ["Confirmed", "green"]),
+        el("div", { class: "cell-sub" }, prov ? `expires ${new Date(r.expires_at).toLocaleDateString()}` : `by ${r.confirmed_by || r.source}`)),
+      el("td", { class: "hide-sm cell-sub" }, `${r.source}${r.source_ref ? " · " + r.source_ref : ""}`),
+      el("td", { class: "right" }, el("div", { class: "sheet-actions", style: "justify-content:flex-end" },
+        prov ? el("button", { class: "btn btn-outline btn-xs", onclick: () => ruleAction(r, "confirm") }, "Confirm") : null,
+        el("button", { class: "btn btn-destructive btn-xs", onclick: () => ruleAction(r, "retire") }, "Retire"))));
+  });
+  return [pageHeader("Rules", "What agents follow. Your rules start confirmed; agents' own rules expire after 7 days unless confirmed."),
+    rules.length ? el("div", { class: "table-card" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Rule"), el("th", { class: "hide-sm" }, "Agent"), el("th", {}, "Status"),
+        el("th", { class: "hide-sm" }, "Source"), el("th", { class: "right" }, ""))), el("tbody", {}, rows)))
+      : el("div", { class: "table-card" }, emptyState("book", "No rules yet", "Rules appear as the brain learns from your decisions and agents propose their own."))];
+}
+
+function renderRuns() {
+  const r = state.runs, s = r.schedule;
+  const pct = Math.min(r.today_cost_usd / r.daily_cap_usd, 1);
+  const todayRuns = r.recent.filter(x => new Date(x.started_at).toDateString() === new Date().toDateString());
+  const errors = todayRuns.filter(x => x.status === "error").length;
+  const jobsOn = Object.values(s.jobs).filter(Boolean).length;
+  const maxDay = Math.max(...r.days.map(d => d.cost_usd), 0.01);
+  const label = (job, lead) => lead ? `${job} · ${lead}` : job;
+  return [
+    pageHeader("Runs & costs", "How the agents are doing: last runs, errors and spend"),
+    el("div", { class: "stats" },
+      el("div", { class: "card" }, el("div", { class: "stat-label" }, "Spend today"),
+        el("div", { class: "stat-value" }, money(r.today_cost_usd)),
+        el("div", { class: "meter", role: "meter", "aria-valuenow": r.today_cost_usd, "aria-valuemax": r.daily_cap_usd, "aria-label": "Daily spend" },
+          el("span", { style: `width:${(pct * 100).toFixed(1)}%;background:${pct > .8 ? "var(--red-solid)" : pct > .5 ? "var(--yellow-solid)" : "var(--green-solid)"}` })),
+        el("div", { class: "stat-foot" }, `of the ${money(r.daily_cap_usd)} daily cap`)),
+      el("div", { class: "card" }, el("div", { class: "stat-label" }, "Runs today"),
+        el("div", { class: "stat-value" }, String(todayRuns.length)),
+        el("div", { class: "stat-foot" }, errors ? `${errors} with errors` : "no errors")),
+      el("div", { class: "card" }, el("div", { class: "stat-label" }, "Schedule"),
+        el("div", { class: "stat-value" }, jobsOn === 3 ? "On" : jobsOn ? "Partial" : "Off"),
+        el("div", { class: "stat-foot" }, jobsOn ? (s.until ? `ends ${new Date(s.until).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}` : "runs until uninstalled") : "cos.py schedule install"))),
+    el("div", { class: "section-header" }, "Schedule"),
+    el("div", { class: "card" }, el("dl", { class: "kv" },
+      el("dt", {}, "Tick"), el("dd", {}, `hourly at :${String(s.tick_minute).padStart(2, "0")}, weekdays ${s.work_hours[0]}:00–${s.work_hours[1]}:00 · scan, triage, draft · never sends`),
+      el("dt", {}, "Daily"), el("dd", {}, `${s.daily_at} · chief of staff, brain, cleanup`),
+      el("dt", {}, "Now"), el("dd", {}, s.in_work_hours ? "inside working hours" : "outside working hours, ticks exit immediately"),
+      el("dt", {}, "Jobs"), el("dd", {}, Object.entries(s.jobs).map(([k, v]) => el("span", { style: "margin-right:8px" }, badge([k.replace("com.cos.", ""), v ? "green" : "gray"])))))),
+    el("div", { class: "section-header" }, "By job · all time"),
+    el("div", { class: "table-card" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Job"), el("th", {}, "Last run"), el("th", { class: "right" }, "Runs"),
+        el("th", { class: "right hide-sm" }, "Errors"), el("th", { class: "right hide-sm" }, "Avg / run"),
+        el("th", { class: "right hide-sm" }, "Max run"), el("th", { class: "right" }, "Total"))),
+      el("tbody", {}, r.summary.length ? r.summary.map(x => el("tr", {},
+        el("td", {}, el("div", { class: "cell-title" }, label(x.job, x.lead)), x.last_error ? el("div", { class: "cell-sub", style: "color:var(--red-fg)" }, x.last_error.slice(0, 140)) : null),
+        el("td", {}, badge(RUN_STATUS[x.last_status] || [x.last_status, "gray"]), el("div", { class: "cell-sub" }, ago(x.last_started))),
+        el("td", { class: "right num" }, x.runs), el("td", { class: "right num hide-sm" }, x.errors || 0),
+        el("td", { class: "right num hide-sm" }, money(x.avg_cost_usd)), el("td", { class: "right num hide-sm" }, money(x.max_cost_usd)),
+        el("td", { class: "right num" }, money(x.cost_usd))))
+        : el("tr", {}, el("td", { colspan: 7 }, emptyState("activity", "No runs yet", "Runs appear after the first tick.")))))),
+    el("div", { class: "section-header" }, "Daily spend"),
+    el("div", { class: "table-card" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Day"), el("th", {}, "Spend"), el("th", { class: "right" }, "Runs"), el("th", { class: "right" }, "Errors"))),
+      el("tbody", {}, r.days.map(d => el("tr", {},
+        el("td", { class: "num" }, d.day),
+        el("td", { class: "num" }, el("span", { class: "bar", style: `width:${Math.round(d.cost_usd / maxDay * 160)}px` }), money(d.cost_usd)),
+        el("td", { class: "right num" }, d.runs), el("td", { class: "right num" }, d.errors || 0)))))),
+    el("div", { class: "section-header" }, "Recent runs"),
+    el("div", { class: "table-card" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Run"), el("th", {}, "Status"), el("th", { class: "hide-sm" }, "Model"),
+        el("th", { class: "right hide-sm" }, "Turns"), el("th", { class: "right" }, "Cost"), el("th", { class: "right hide-sm" }, "Started"))),
+      el("tbody", {}, r.recent.map(x => el("tr", {},
+        el("td", {}, el("div", { class: "cell-title" }, label(x.job, x.lead) + (x.item_id ? ` · item #${x.item_id}` : "")),
+          el("div", { class: "cell-sub" }, `run ${x.id}`), x.error ? el("div", { class: "cell-sub", style: "color:var(--red-fg)" }, x.error.slice(0, 160)) : null),
+        el("td", {}, badge(RUN_STATUS[x.status] || [x.status, "gray"])),
+        el("td", { class: "hide-sm muted" }, x.model || ""),
+        el("td", { class: "right num hide-sm" }, x.num_turns ?? ""),
+        el("td", { class: "right num" }, x.cost_usd != null ? money(x.cost_usd) : ""),
+        el("td", { class: "right muted num hide-sm" }, ago(x.started_at))))))),
+  ];
+}
+
+function findItem(id) {
+  return state.queue.items.find(i => i.id === id) || (state.queue.recent || []).find(i => i.id === id)
+    || (state.ws ? [...state.ws.items, ...state.ws.closed].find(i => i.id === id) : null);
+}
+
+function renderSheet() {
+  const sheet = document.getElementById("sheet"), backdrop = document.getElementById("backdrop");
+  const it = state.route.id && (["queue", "closed"].includes(state.route.page) || wsIdOf(state.route.page)) ? findItem(state.route.id) : null;
+  if (!it) { sheet.hidden = true; backdrop.hidden = true; return; }
+  const url = it.url && safeUrl(it.url);
+  const source = url ? sourceLink(it.lead, url) : null;
+  const sub = [it.requester, it.reference].filter(Boolean).join(" · ");
+  // The status shows only when it isn't the usual "waiting on you", so the meta line stays quiet.
+  const status = ["pending", "changes_requested"].includes(it.status) ? null : STATUS[it.status]?.[0];
+
+  sheet.replaceChildren(
+    el("header", { class: "pane-head" },
+      el("div", { class: "pane-meta" },
+        el("span", { class: "pane-pri" }, el("span", { class: `pri-dot p${it.priority}` }), `P${it.priority}`),
+        sep(), el("span", {}, it.source_label || it.lead), sep(), el("span", {}, ago(it.created_at)),
+        status ? [sep(), el("span", {}, status)] : null,
+        el("button", { class: "pane-close", "aria-label": "Close", onclick: closeSheet }, icon("x", 16))),
+      el("h2", { class: "pane-title", id: "sheetTitle" }, it.ask || it.title),
+      sub ? el("div", { class: "pane-sub" }, sub) : null,
+      source ? el("a", { class: "btn btn-outline pane-source", href: source.href, target: "_blank", rel: "noopener noreferrer" },
+        source.label, icon("external", 13)) : null),
+    el("div", { class: "pane-body" },
+      updatesSection(it),
+      sessionsSection(it),
+      workstreamSection(it)),
+    paneFoot(it));
+  sheet.hidden = false; backdrop.hidden = false;
+}
+
+const sep = () => el("span", { "aria-hidden": "true" }, "·");
+const paneLabel = (text, tag = "h3") => el(tag, { class: "pane-label" }, text);
+
+// The lead's timeline, with a date on the first row and wherever the day changes; older items fall back to their
+// summary's lines, without times.
+function updatesSection(it) {
+  let rows, timed = true;
+  if (it.timeline?.length) {
+    let prevDay = null;
+    rows = it.timeline.map(r => {
+      const at = r.at ? new Date(r.at) : null;
+      if (!at || isNaN(at)) return { time: "", text: r.text };
+      const day = at.toDateString();
+      let time = day === prevDay ? hm(at) : `${at.toLocaleDateString([], { month: "short", day: "numeric" })}, ${hm(at)}`;
+      prevDay = day;
+      const until = r.until ? new Date(r.until) : null;
+      if (until && !isNaN(until) && hm(until) !== hm(at)) time += ` – ${hm(until)}`;
+      return { time, text: r.text };
+    });
+  } else {
+    rows = (it.summary || "").split("\n").map(l => l.replace(/^\s*[-•]\s*/, "").trim()).filter(Boolean).map(text => ({ time: "", text }));
+    timed = false;
+  }
+  if (!rows.length) return null;
+  return el("section", { class: "pane-section" }, paneLabel("Latest updates"),
+    el("div", { class: "timeline" + (timed ? "" : " no-time") }, rows.map(r =>
+      el("div", { class: "tl-row" }, timed ? el("span", { class: "tl-time" }, r.time) : null, el("span", {}, r.text)))));
+}
+const hm = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+const LAUNCHABLE = ["pending", "approved", "failed"];
+
+function sessionsSection(it) {
+  const open = LAUNCHABLE.includes(it.status);
+  const sessions = it.sessions || [];
+  if (!open && !sessions.length) return null;
+  const formOpen = open && state.promptOpen[it.id];
+  let list = null;
+  if (sessions.length) list = el("div", { class: "session-list" }, sessions.map(s => sessionRow(it, s)));
+  else if (!formOpen) list = el("div", { class: "pane-empty" },
+    it.prompt ? "The lead drafted a prompt for this. New session opens it." : "No sessions yet.");
+  return el("section", { class: "pane-section" },
+    el("div", { class: "pane-section-head" }, paneLabel("Claude sessions"),
+      open && !formOpen ? el("button", { class: "btn btn-ghost btn-sm pane-new", onclick: () => { state.promptOpen[it.id] = true; renderSheet(); } },
+        icon("plus", 14), "New session") : null),
+    formOpen ? newSessionForm(it) : null,
+    it.launch_error ? el("div", { class: "error" }, it.launch_error) : null,
+    list);
+}
+
+// The lead's drafted prompt, editable, with where to start; Start opens it as a Claude session (state.queue.launcher).
+function newSessionForm(it) {
+  const ta = el("textarea", { id: "new-prompt", placeholder: "What should the agent do? Include the links and context it needs." });
+  ta.value = state.prompts[it.id] ?? (it.prompt || "");
+  ta.addEventListener("input", () => { state.prompts[it.id] = ta.value; });
+  const dirs = state.queue.workdirs || [];
+  // An item queued when there were more folders may name one that's no longer offered.
+  const current = [state.workdirs[it.id], it.workdir].find(d => dirs.includes(d)) || state.queue.default_workdir;
+  const wt = el("input", { type: "checkbox" });
+  wt.checked = state.worktrees[it.id] ?? true;
+  wt.addEventListener("change", () => { state.worktrees[it.id] = wt.checked; });
+  const pick = el("select", { class: "select", id: "new-repo", "aria-label": "Repository",
+    onchange: e => { state.workdirs[it.id] = e.target.value; } },
+    dirs.map(d => el("option", { value: d, selected: d === current }, d)));
+  const busy = state.launching.has(it.id);
+  // The desktop app can't be asked for a worktree, so there's no choice to offer.
+  const canWorktree = state.queue.launcher !== "desktop";
+  return el("div", { class: "new-session" },
+    el("label", { for: "new-prompt", class: "new-session-label" }, "Prompt"),
+    ta,
+    el("div", { class: "new-session-row" },
+      pick,
+      canWorktree ? el("label", { class: "check" }, wt, "New worktree") : null,
+      el("button", { class: "btn btn-ghost", style: "margin-left:auto", onclick: () => { state.promptOpen[it.id] = false; renderSheet(); } }, "Cancel"),
+      el("button", { class: "btn btn-primary", disabled: busy, onclick: e => launchSession(it, ta.value, pick.value, canWorktree && wt.checked, e.currentTarget) },
+        busy ? (wt.checked ? "Creating worktree…" : "Starting…") : "Start")));
+}
+
+async function launchSession(it, prompt, workdir, worktree, button) {
+  if (!prompt.trim()) { toast("Write a prompt for the agent first"); return; }
+  state.launching.add(it.id); button.disabled = true; button.textContent = worktree ? "Creating worktree…" : "Starting…";
+  try {
+    await api(`/api/items/${it.id}/launch`, { method: "POST", body: JSON.stringify({ prompt, workdir, worktree }) });
+    delete state.prompts[it.id]; delete state.workdirs[it.id]; delete state.worktrees[it.id];
+    state.promptOpen[it.id] = false;
+    const where = state.queue.launcher_label || "Orca";
+    toast(state.queue.launcher === "desktop" ? `Opened the prompt in the Claude app for #${it.id}; press Enter there to start`
+      : worktree ? `Created a worktree and started Claude in ${where} for #${it.id}` : `Started a Claude session in ${where} for #${it.id}`);
+  } catch (e) { toast(e.message); }
+  state.launching.delete(it.id);
+  await load();
+}
+
+function sessionRow(it, s) {
+  const repo = (s.cwd || "").split("/").filter(Boolean).pop();
+  const resume = el("button", { class: "btn btn-ghost btn-sm session-resume", "aria-label": `Resume ${s.title}` },
+    icon("terminal", 14), "Resume");
+  const flash = (ic, label) => {
+    resume.replaceChildren(icon(ic, 14), label);
+    setTimeout(() => { resume.disabled = false; resume.replaceChildren(icon("terminal", 14), "Resume"); }, 1500);
+  };
+  // Reopens the session where the launcher setting says; if that fails, copies the resume command instead.
+  resume.addEventListener("click", async () => {
+    resume.disabled = true;
+    resume.replaceChildren(icon("terminal", 14), "Opening…");
+    try {
+      const r = await api("/api/sessions/resume", { method: "POST", body: JSON.stringify({ session_id: s.session_id }) });
+      flash("check", "Opened");
+      if (r.opened_in) toast(`Opened in ${r.opened_in}`);
+    } catch (e) {
+      try { await navigator.clipboard.writeText(s.resume); flash("copy", "Copied"); toast(`Couldn't open it (${e.message}). Copied the resume command instead.`); }
+      catch { resume.disabled = false; resume.replaceChildren(icon("terminal", 14), "Resume"); toast(`Couldn't open it: ${e.message}`); }
+    }
+  });
+  return el("div", { class: "session-row" },
+    icon("terminal", 16),
+    el("div", { class: "session-main" },
+      el("div", { class: "session-name", title: s.title }, s.title),
+      el("div", { class: "session-meta" }, [repo, `active ${ago(s.last_at)}`].filter(Boolean).join(" · "))),
+    resume,
+    el("details", { class: "row-menu" },
+      el("summary", { "aria-label": "More actions" }, icon("more", 16)),
+      el("div", { class: "row-menu-pop" },
+        el("button", { onclick: e => { e.currentTarget.closest("details").open = false; copyText(s.resume, "Resume command copied"); } }, "Copy resume command"),
+        el("button", { title: "Not related; it won't be linked again", onclick: () => unlinkSession(it, s) }, "Unlink"))));
+}
+async function copyText(text, done) {
+  try { await navigator.clipboard.writeText(text); toast(done); } catch { toast("Couldn't copy; select the command instead"); }
+}
+async function unlinkSession(it, s) {
+  try {
+    await api(`/api/items/${it.id}/unlink`, { method: "POST", body: JSON.stringify({ session_id: s.session_id }) });
+    toast("Unlinked");
+    await load();
+  } catch (e) { toast(e.message); }
+}
+
+function workstreamSection(it) {
+  if (!MOVABLE.includes(it.status)) return null;
+  const streams = state.queue.workstreams.filter(w => w.status === "active" && w.id !== it.workstream_id);
+  const here = it.workstream_id ? state.queue.workstreams.find(w => w.id === it.workstream_id) : null;
+  const move = async e => {
+    const v = e.target.value;
+    if (!v) return;
+    const target = v === "queue" ? null : Number(v);
+    const res = await wsPost(`/api/items/${it.id}/move`, { workstream_id: target },
+      target ? `Moved to ${streams.find(w => w.id === target)?.name}` : "Moved to the queue");
+    if (res) closeSheet();
+  };
+  const pick = el("select", { class: "select", "aria-label": here ? "Move to another workstream" : "Add to a workstream",
+    disabled: !here && !streams.length, onchange: move },
+    el("option", { value: "" }, here ? `In ${here.name} · move to…` : "Add to a workstream…"),
+    here ? el("option", { value: "queue" }, "Back to the queue") : null,
+    streams.map(w => el("option", { value: w.id }, w.name)));
+  return el("section", { class: "pane-section" }, paneLabel("Workstream"),
+    el("div", { class: "ws-row" }, pick, here ? null : [el("span", { class: "pane-hint" }, "or"), promoteButton(it)]));
+}
+function promoteButton(it) {
+  return el("button", { class: "btn btn-outline", onclick: async () => {
+    const name = prompt("Name the new workstream", it.ask || it.title);
+    if (!name) return;
+    const res = await wsPost(`/api/items/${it.id}/promote`, { name }, "Workstream created. Its lead is setting it up.");
+    if (res) go(`ws:${res.id}`);
+  } }, "Make this a workstream");
+}
+
+// Footer: an instruction for the lead, then the two decisions that fit the item's state.
+function paneFoot(it) {
+  if (it.status === "changes_requested") {
+    if (!state.working.has(it.id)) state.working.set(it.id, Date.now());
+    return el("footer", { class: "pane-foot" }, el("div", { class: "working" }, el("span", { class: "spinner", "aria-hidden": "true" }),
+      el("div", {}, el("b", {}, `The ${it.lead} lead is working on: `), `“${it.feedback || ""}”`)));
+  }
+  const a = it.action;
+  const effect = a ? (EFFECTS[a.type] || (() => a.type))(a) : null;
+  const btn = (label, onclick, primary = false, ic = null) =>
+    el("button", { class: `btn ${primary ? "btn-primary" : "btn-outline"}`, onclick }, ic ? icon(ic, 15) : null, label);
+  let actions = null, note = null;
+  if (NEEDS_REVIEW.includes(it.status) && a) {
+    note = `Approve: ${effect}`;
+    actions = [btn("Approve", () => decide(it, "approve"), true, "check"), btn("Don't track", () => decide(it, "dismiss"))];
+  } else if (NEEDS_REVIEW.includes(it.status)) {
+    actions = [btn("Mark done", () => decide(it, "approve"), true, "check"), btn("Don't track", () => decide(it, "dismiss"))];
+  } else if (it.status === "approved" && a) {
+    note = `Send: ${effect}`;
+    actions = [btn("Send", e => send(it, e.currentTarget), true, "send"), btn("Un-approve", () => decide(it, "unapprove"))];
+  } else if (it.status === "failed") {
+    note = it.exec_error ? `Failed: ${it.exec_error}` : null;
+    actions = [btn("Retry", () => decide(it, "retry"), true), btn("Dismiss", () => decide(it, "dismiss"))];
+  } else if (it.status === "executing") {
+    note = "Sending…";
+  }
+  // Free-text instructions go to the item's lead, which runs right away and revises the item.
+  const canInstruct = (state.queue.leads || []).includes(it.lead) && ["pending", "approved"].includes(it.status);
+  let ask = null;
+  if (canInstruct) {
+    const input = el("input", { type: "text", id: "note", class: "lead-input-field", placeholder: "Tell the lead agent what to do…", "aria-label": "Instruction for the lead agent" });
+    input.value = state.notes[it.id] || "";
+    input.addEventListener("input", () => { state.notes[it.id] = input.value; });
+    input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); instruct(it); } });
+    ask = el("div", { class: "lead-input" }, input,
+      el("button", { class: "lead-send", "aria-label": "Send to lead agent", onclick: () => instruct(it) }, icon("arrowUp", 15)));
+  }
+  if (!ask && !actions && !note) return null;
+  return el("footer", { class: "pane-foot" }, ask,
+    note ? el("div", { class: it.status === "failed" ? "error" : "pane-hint" }, note) : null,
+    actions ? el("div", { class: "pane-actions" }, actions) : null);
+}
+
+const SOURCE_LOGOS = { slack: "/logos/slack.png", granola: "/logos/granola.png", switchboard: "/logos/switchboard.png", notion: "/logos/notion.png", email: "/logos/gmail.png" };
+const SOURCE_GLYPHS = { chief: "spark", todo: "check", workstream: "layers" };
+function sourceMark(lead, size = 18) {
+  const label = lead.charAt(0).toUpperCase() + lead.slice(1);
+  if (SOURCE_LOGOS[lead]) return el("img", { class: "source-mark", src: SOURCE_LOGOS[lead], width: size, height: size, alt: label, title: label });
+  return el("span", { class: "source-mark glyph", role: "img", "aria-label": label, title: label, style: `width:${size}px;height:${size}px` },
+    icon(SOURCE_GLYPHS[lead] || "inbox", Math.round(size * 0.72)));
+}
+
+function sourceLink(lead, href) {
+  const host = new URL(href).hostname;
+  if (host.endsWith("slack.com")) return { href, label: "Open in Slack" };
+  if (host === "switchboard.checkhq.com") return { href, label: "Open in Switchboard" };
+  if (host === "notes.granola.ai") return { href, label: "Open in Granola" };
+  if (host.endsWith("notion.com") || host.endsWith("notion.so")) return { href, label: "Open in Notion" };
+  if (host === "mail.google.com") return { href, label: "Open in Gmail" };
+  return { href, label: "Open source" };
+}
+
+function closeSheet() { go(state.route.page); }
+
+async function decide(it, decision) {
+  const note = (state.notes[it.id] || "").trim();
+  if (decision === "changes" && !note) { toast("Write a note saying what to change"); document.getElementById("note")?.focus(); return; }
+  const payload = { note: note || null };
+  try {
+    const updated = await api(`/api/items/${it.id}/${decision}`, { method: "POST", body: JSON.stringify(payload) });
+    delete state.notes[it.id];
+    const said = { changes_requested: "sent back to the lead",
+                   done: "closed", dismissed: "closed as not useful" }[updated.status];
+    toast(`#${it.id} ${said || STATUS[updated.status]?.[0].toLowerCase() || updated.status}`);
+    // After a decision on a review item, move to the next one so the queue can be worked straight through.
+    if ((state.route.page === "queue" || wsIdOf(state.route.page)) && ["rejected", "dismissed", "changes_requested", "done"].includes(updated.status)) go(state.route.page);
+    await load();
+  } catch (e) { toast(e.message); }
+}
+async function instruct(it) {
+  const note = (state.notes[it.id] || "").trim();
+  if (!note) { toast("Type what you want the lead to do"); document.getElementById("note")?.focus(); return; }
+  try {
+    await api(`/api/items/${it.id}/instruct`, { method: "POST", body: JSON.stringify({ note }) });
+    delete state.notes[it.id];
+    state.working.set(it.id, Date.now());
+    toast(`Sent to the ${it.lead} lead. Working on it…`);
+    await load();
+  } catch (e) { toast(e.message); }
+}
+
+async function send(it, button) {
+  button.disabled = true;
+  try {
+    await api(`/api/items/${it.id}/send`, { method: "POST", body: "{}" });
+    toast(`#${it.id} sending…`);
+    setTimeout(load, 1500);
+  } catch (e) { toast(e.message); button.disabled = false; }
+}
+async function ruleAction(r, verb) {
+  try {
+    await api(`/api/rules/${r.id}/${verb}`, { method: "POST", body: "{}" });
+    toast(`Rule #${r.id} ${verb === "confirm" ? "confirmed" : "retired"}`);
+    await load();
+  } catch (e) { toast(e.message); }
+}
+
+// ---- Workstreams ----------------------------------------------------------------------------------------
+
+const HEALTH = { on_track: ["On track", "green"], at_risk: ["At risk", "yellow"], blocked: ["Blocked", "red"], looks_done: ["Looks done", "blue"] };
+const FILED_BY = { source: "a watched source", intern: "the intern's judgment", lead: "the workstream's lead", user: "you" };
+const MOVABLE = ["pending", "approved", "failed"];
+
+// Inputs keep what you typed across re-renders (a refresh or another click re-draws the page).
+function field(key, attrs = {}, tag = "input") {
+  const n = el(tag, { ...(tag === "input" ? { type: "text" } : {}), ...attrs });
+  n.value = state.form[key] || "";
+  n.addEventListener("input", () => { state.form[key] = n.value; });
+  return n;
+}
+function clearField(...keys) { for (const k of keys) delete state.form[k]; }
+
+async function wsPost(path, body = {}, done = null) {
+  try {
+    const res = await api(path, { method: "POST", body: JSON.stringify(body) });
+    if (done) toast(done);
+    await load();
+    return res;
+  } catch (e) { toast(e.message); return null; }
+}
+
+function goalBadge(g) {
+  if (g.status === "proposed") return badge(["Proposed", "blue"]);
+  if (g.status === "done") return badge(["Done", "green"]);
+  if (g.status === "dropped") return badge(["Dropped", "gray"]);
+  if (g.status === "carried") return badge(["Carried over", "gray"]);
+  return badge(HEALTH[g.health] || ["Open", "gray"]);
+}
+
+function renderWorkstreams() {
+  const all = state.queue.workstreams;
+  const create = async () => {
+    const name = (state.form.wsName || "").trim();
+    if (!name) { toast("Give the workstream a name"); return; }
+    const res = await wsPost("/api/workstreams", { name, description: state.form.wsDesc || "",
+      links: (state.form.wsLinks || "").split(/\s+/).filter(Boolean) });
+    if (res) {
+      clearField("wsName", "wsDesc", "wsLinks");
+      if (res.unparsed?.length) toast(`Kept ${res.unparsed.length} link(s) in the description for the lead to look at`);
+      go(`ws:${res.id}`);
+    }
+  };
+  return [
+    pageHeader("Workstreams", "Long-running projects you lead. Each has its own lead that tracks it, keeps your weekly goals current, and proposes next steps."),
+    el("div", { class: "card", style: "margin-bottom:16px" },
+      el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("plus", 16), "New workstream")),
+      el("div", { class: "form-grid" },
+        el("div", {}, el("div", { class: "field-label" }, "Name"), field("wsName", { placeholder: "e.g. NV MBT credit handling" })),
+        el("div", {}, el("div", { class: "field-label" }, "What it is, and what done looks like"),
+          field("wsDesc", { placeholder: "A few sentences. The lead drafts a charter and proposes goals from this." }, "textarea")),
+        el("div", {}, el("div", { class: "field-label" }, el("span", {}, "Starting links (optional)"), el("span", {}, "Slack channels or threads, Switchboard plans; one per line")),
+          field("wsLinks", { placeholder: "https://yourteam.slack.com/archives/C0123ABC" }, "textarea")),
+        el("div", { class: "sheet-actions" },
+          el("button", { class: "btn btn-primary", onclick: create }, "Create and start its lead"),
+          el("span", { class: "muted", style: "font-size:13px" }, "Its lead's first run looks for more sources and drafts a charter and goals, all for you to confirm.")))),
+    all.length ? el("div", { class: "table-card" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Workstream"), el("th", {}, "Status"), el("th", { class: "right" }, "Needs you"),
+        el("th", { class: "right hide-sm" }, "Lead last ran"))),
+      el("tbody", {}, all.map(w => el("tr", { class: "clickable", onclick: () => go(`ws:${w.id}`) },
+        el("td", {}, el("div", { class: "cell-title" }, w.name),
+          el("div", { class: "cell-sub" }, [w.proposed_goals ? `${w.proposed_goals} proposed goals` : null,
+            w.proposed_sources ? `${w.proposed_sources} proposed sources` : null].filter(Boolean).join(" · ") || w.slug)),
+        el("td", {}, badge({ active: ["Active", "green"], paused: ["Paused", "yellow"], archived: ["Archived", "gray"] }[w.status])),
+        el("td", { class: "right num" }, w.needs_review || "", w.urgent ? el("span", { class: "nav-dot", style: "display:inline-block;margin-left:6px" }) : null),
+        el("td", { class: "right muted hide-sm" }, w.running ? "running now" : (w.last_run_at ? ago(w.last_run_at) : "never")))))))
+      : null,
+  ];
+}
+
+function renderWorkstream() {
+  const d = state.ws, wsId = wsIdOf(state.route.page);
+  if (!d || d.workstream.id !== wsId) return [el("div", { class: "muted" }, "Loading…")];
+  const w = d.workstream, active = w.status === "active";
+  const base = `/api/workstreams/${w.id}`;
+
+  const statusLine = [
+    { active: "Active", paused: "Paused: not scanning, lead not running", archived: "Archived" }[w.status],
+    d.running ? "lead working now" : (w.last_run_at ? `lead ran ${ago(w.last_run_at)}` : "lead hasn't run yet"),
+    d.pending_activity ? `${d.pending_activity} new messages for the lead` : null,
+  ].filter(Boolean).join(" · ");
+  const actions = [
+    active ? el("button", { class: "btn btn-outline btn-sm", disabled: d.running, onclick: () => wsPost(`${base}/run`, {}, "Lead started") }, "Run lead now") : null,
+    w.status === "active" ? el("button", { class: "btn btn-ghost btn-sm", onclick: () => wsPost(`${base}/pause`, {}, "Paused") }, "Pause") : null,
+    w.status === "paused" ? el("button", { class: "btn btn-outline btn-sm", onclick: () => wsPost(`${base}/resume`, {}, "Resumed") }, "Resume") : null,
+    w.status !== "archived" ? el("button", { class: "btn btn-destructive btn-sm", onclick: () => {
+      if (confirm(`Archive "${w.name}"? Open items from conversations go back to the queue, the lead's own next steps are dismissed, and its sources are released.`))
+        wsPost(`${base}/archive`, {}, "Archived");
+    } }, "Archive") : null,
+  ].filter(Boolean);
+
+  // Tell the lead
+  const sendInstruction = async () => {
+    const text = (state.form[`instr${w.id}`] || "").trim();
+    if (!text) { toast("Type what you want the lead to do"); return; }
+    if (await wsPost(`${base}/instruct`, { text }, "Sent to the lead. It's running now.")) clearField(`instr${w.id}`);
+  };
+  const instrInput = field(`instr${w.id}`, { placeholder: active ? `Tell the lead, e.g. "my goals this week are…" or "stop watching #general"` : "Resume the workstream to talk to its lead", disabled: !active });
+  instrInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); sendInstruction(); } });
+  const talk = el("div", { class: "card" },
+    el("div", { class: "instruct" }, instrInput, el("button", { class: "btn btn-primary", disabled: !active, onclick: sendInstruction }, icon("send", 16), "Send")),
+    d.running ? el("div", { class: "working", style: "margin-top:12px" }, el("span", { class: "spinner", "aria-hidden": "true" }),
+      el("div", {}, el("b", {}, "The lead is working. "), "Its updates, goals and proposals appear here when it's done.")) : null,
+    d.instructions.length ? el("div", { class: "rows", style: "margin-top:12px;gap:6px" }, d.instructions.slice(0, 3).map(i =>
+      el("div", { class: "instr" }, el("div", {}, el("b", {}, "You: "), i.text),
+        el("div", { class: "muted" }, i.response ? ["Lead: ", i.response] : "Waiting for the lead's next run")))) : null);
+
+  // Needs you
+  state.sel = Math.min(state.sel, Math.max(d.items.length - 1, 0));
+  const needs = el("section", {},
+    el("div", { class: "card-head", style: "margin:0 0 10px" }, el("div", { class: "card-title" }, icon("inbox", 16), "Needs you"),
+      el("span", { class: "card-meta" }, queueSummary(d.items))),
+    d.items.length ? itemTable(d.items, { selectable: true })
+      : el("div", { class: "table-card" }, emptyState("check", "Nothing needs you here", "Replies, decisions and next steps from this workstream's lead show up here.")));
+
+  // Updates
+  const updates = el("div", { class: "card" },
+    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("clock", 16), "Updates")),
+    d.updates.length ? el("div", { class: "rows" }, d.updates.slice(0, 25).map(u => {
+      const href = u.url && safeUrl(u.url);
+      const when = u.occurred_at || u.created_at;
+      return el("div", { class: "row" }, el("div", { class: "row-main" }, el("div", { class: "row-text" }, u.text),
+        el("div", { class: "row-sub" }, when ? new Date(when).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "",
+          href ? [" · ", el("a", { href, target: "_blank", rel: "noopener noreferrer" }, "Open")] : null)));
+    })) : el("div", { class: "muted", style: "font-size:13px" }, "The lead logs decisions, merges, phase changes and new risks here."));
+
+  // Goals
+  const goalRow = (g, earlier = false) => el("div", { class: "row" },
+    el("div", {}, goalBadge(g)),
+    el("div", { class: "row-main" }, el("div", { class: "row-text" }, g.text),
+      g.progress ? el("div", { class: "row-sub" }, g.progress) : null,
+      earlier ? el("div", { class: "row-sub" }, `from ${g.week}`) : null,
+      g.status === "proposed" ? el("div", { class: "row-sub" }, "Proposed by the lead") : null),
+    el("div", { class: "row-actions" },
+      g.status === "proposed" ? [el("button", { class: "btn btn-outline btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/accept`) }, "Accept"),
+        el("button", { class: "btn btn-ghost btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/reject`) }, "Reject")] : null,
+      g.status === "open" && earlier ? el("button", { class: "btn btn-outline btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/carry`, {}, "Carried into this week") }, "Carry over") : null,
+      g.status === "open" && !earlier ? el("button", { class: "btn btn-outline btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/done`, {}, "Goal done") }, icon("check", 14), "Done") : null,
+      g.status === "open" ? el("button", { class: "btn btn-ghost btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/drop`) }, "Drop") : null,
+      ["done", "dropped"].includes(g.status) ? el("button", { class: "btn btn-ghost btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/reopen`) }, "Reopen") : null));
+  const addGoal = async () => {
+    const text = (state.form[`goal${w.id}`] || "").trim();
+    if (!text) return;
+    if (await wsPost(`${base}/goal`, { text })) clearField(`goal${w.id}`);
+  };
+  const goalInput = field(`goal${w.id}`, { placeholder: "Add a goal for this week" });
+  goalInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addGoal(); } });
+  const doneCount = d.goals.filter(g => g.status === "done").length, counted = d.goals.filter(g => ["open", "done"].includes(g.status)).length;
+  const goals = el("div", { class: "card" },
+    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("target", 16), `This week · ${d.week.split("-")[1]}`),
+      el("span", { class: "card-meta" }, counted ? `${doneCount} of ${counted} done` : "")),
+    d.goals.length ? el("div", { class: "rows" }, d.goals.map(g => goalRow(g)))
+      : el("div", { class: "muted", style: "font-size:13px" }, "No goals yet this week. Add your own, or the lead proposes some on its next run."),
+    d.unfinished.length ? [el("div", { class: "subhead" }, "Unfinished from earlier weeks"), el("div", { class: "rows" }, d.unfinished.map(g => goalRow(g, true)))] : null,
+    el("div", { class: "inline-form" }, goalInput, el("button", { class: "btn btn-outline", onclick: addGoal }, "Add")));
+
+  // Recently closed
+  const closed = d.closed.length ? el("div", { class: "card" },
+    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("archive", 16), "Recently closed")),
+    el("div", { class: "rows" }, d.closed.slice(0, 8).map(it => el("div", { class: "row clickable", onclick: () => go(state.route.page, it.id) },
+      el("div", { class: "row-main" }, el("div", { class: "row-title" }, it.title),
+        el("div", { class: "row-sub" }, `#${it.id} · ${it.kind} · ${ago(it.executed_at || it.decided_at || it.updated_at)}`)),
+      statusBadge(it.status))))) : null;
+
+  // Sources
+  const addSource = async () => {
+    const link = (state.form[`src${w.id}`] || "").trim();
+    if (!link) return;
+    if (await wsPost(`${base}/source`, { link }, "Watching it")) clearField(`src${w.id}`);
+  };
+  const srcInput = field(`src${w.id}`, { placeholder: "Paste a Slack channel/thread or Switchboard plan link" });
+  srcInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addSource(); } });
+  const srcRow = s => {
+    const href = s.url && safeUrl(s.url);
+    const kind = { slack_channel: "Slack channel", slack_thread: "Slack thread", switchboard_plan: "Switchboard plan" }[s.kind];
+    const fallback = s.kind === "slack_thread" ? `Thread in ${s.ref.split(":")[0]}` : s.kind === "switchboard_plan" ? `Plan ${s.ref.slice(0, 11)}…` : s.ref;
+    const name = s.label || fallback;
+    return el("div", { class: "row" },
+      el("div", {}, icon(s.kind === "switchboard_plan" ? "plan" : "chat", 16)),
+      el("div", { class: "row-main" },
+        el("div", { class: "row-title" }, href ? el("a", { href, target: "_blank", rel: "noopener noreferrer", title: s.ref }, name) : el("span", { title: s.ref }, name)),
+        el("div", { class: "row-sub" }, kind),
+        s.why && s.status === "proposed" ? el("div", { class: "row-sub" }, s.why) : null),
+      el("div", { class: "row-actions" }, s.status === "proposed"
+        ? [el("button", { class: "btn btn-outline btn-xs", onclick: () => wsPost(`/api/sources/${s.id}/accept`, {}, "Watching it") }, "Accept"),
+           el("button", { class: "btn btn-ghost btn-xs", onclick: () => wsPost(`/api/sources/${s.id}/reject`) }, "Reject")]
+        : el("button", { class: "btn btn-ghost btn-icon", style: "width:24px;height:24px", "aria-label": "Stop watching", title: "Stop watching",
+            onclick: () => wsPost(`/api/sources/${s.id}/remove`, {}, "Stopped watching") }, icon("x", 14))));
+  };
+  const proposed = d.sources.filter(s => s.status === "proposed"), watched = d.sources.filter(s => s.status === "active");
+  const sources = el("div", { class: "card" },
+    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("chat", 16), "Sources"),
+      el("span", { class: "card-meta" }, `${watched.length} watched`)),
+    proposed.length ? [el("div", { class: "subhead", style: "margin-top:0" }, "Proposed by the lead"), el("div", { class: "rows" }, proposed.map(srcRow)),
+      watched.length ? el("div", { class: "subhead" }, "Watched") : null] : null,
+    watched.length ? el("div", { class: "rows" }, watched.map(srcRow))
+      : (proposed.length ? null : el("div", { class: "muted", style: "font-size:13px" }, "Nothing watched yet. The lead proposes sources on its first run.")),
+    w.status !== "archived" ? el("div", { class: "inline-form" }, srcInput, el("button", { class: "btn btn-outline", onclick: addSource }, "Watch")) : null);
+
+  // Claude chats linked to this workstream
+  const chats = el("div", { class: "card" },
+    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("terminal", 16), "Claude chats"),
+      el("span", { class: "card-meta" }, d.sessions.length ? `${d.sessions.length} linked` : "")),
+    d.sessions.length ? el("div", { class: "sessions" }, d.sessions.slice(0, 8).map(cs => {
+      const where = [cs.cwd && cs.cwd.replace(/^\/Users\/[^/]+\//, "~/"), cs.branch].filter(Boolean).join(" · ");
+      return el("div", { class: "session" },
+        el("div", { class: "session-head" }, el("div", { class: "session-title" }, cs.title),
+          el("span", { class: "muted", style: "font-size:12px;white-space:nowrap" }, ago(cs.last_at))),
+        where ? el("div", { class: "cell-sub" }, where) : null,
+        cs.why ? el("div", { class: "session-why" }, cs.why) : null,
+        el("div", { class: "session-cmd" }, el("code", {}, cs.resume),
+          el("button", { class: "btn btn-outline btn-sm", onclick: () => copyText(cs.resume, "Resume command copied") }, "Copy"),
+          el("button", { class: "btn btn-ghost btn-sm", title: "Not related; it won't be linked again",
+            onclick: () => wsPost(`${base}/unlink`, { session_id: cs.session_id }, "Unlinked") }, "Unlink")));
+    })) : el("div", { class: "muted", style: "font-size:13px" }, "Claude Code sessions you spend on this project are linked here automatically, on each tick."));
+
+  // About: description and charter
+  let charterBody;
+  if (state.editCharter) {
+    const ta = field(`charter${w.id}`, { "aria-label": "Charter" }, "textarea");
+    if (!(`charter${w.id}` in state.form)) { ta.value = w.charter || ""; state.form[`charter${w.id}`] = ta.value; }
+    charterBody = [ta, el("div", { class: "sheet-actions", style: "margin-top:8px" },
+      el("button", { class: "btn btn-primary btn-sm", onclick: async () => {
+        if (await wsPost(`${base}/edit`, { charter: state.form[`charter${w.id}`] || "" }, "Charter saved")) { state.editCharter = false; clearField(`charter${w.id}`); render(); }
+      } }, "Save"),
+      el("button", { class: "btn btn-ghost btn-sm", onclick: () => { state.editCharter = false; clearField(`charter${w.id}`); render(); } }, "Cancel"))];
+  } else {
+    charterBody = w.charter ? el("div", { class: "prose" }, w.charter) : el("div", { class: "muted", style: "font-size:13px" }, "No charter yet. The lead drafts one on its first run.");
+  }
+  const about = el("div", { class: "card" },
+    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("book", 16), "Charter"),
+      el("div", { class: "sheet-actions" }, el("span", { class: "card-meta" }, w.charter ? (w.charter_by === "user" ? "yours" : "drafted by the lead") : ""),
+        !state.editCharter && w.status !== "archived" ? el("button", { class: "btn btn-ghost btn-xs", onclick: () => { state.editCharter = true; render(); } }, "Edit") : null)),
+    charterBody,
+    w.description ? [el("div", { class: "subhead" }, "What you wrote"), el("div", { class: "prose muted" }, w.description)] : null);
+
+  const runs = d.runs.length ? el("details", { class: "panel-box" }, el("summary", {}, "Lead runs"),
+    el("div", { style: "padding:4px 14px 12px" }, el("div", { class: "rows" }, d.runs.map(r => el("div", { class: "row" },
+      el("div", { class: "row-main" }, el("div", { class: "row-sub" }, `run ${r.id} · ${ago(r.started_at)}${r.cost_usd != null ? " · " + money(r.cost_usd) : ""}`),
+        r.error ? el("div", { class: "row-sub", style: "color:var(--red-fg)" }, r.error.slice(0, 200)) : null),
+      badge(RUN_STATUS[r.status] || [r.status, "gray"])))))) : null;
+
+  return [
+    pageHeader(w.name, statusLine, ...actions),
+    el("div", { class: "ws-grid" },
+      el("div", { class: "ws-col" }, talk, needs, updates, goals, closed),
+      el("div", { class: "ws-col" }, sources, chats, about, runs)),
+  ];
+}
+
+// In the item sheet: which workstream an item is in, and moving it.
+function render() {
+  if (!state.queue || !state.runs) return;
+  renderChrome();
+  const page = wsIdOf(state.route.page) ? renderWorkstream()
+    : { queue: renderQueue, closed: renderClosed, rules: renderRules, runs: renderRuns, workstreams: renderWorkstreams }[state.route.page]();
+  const main = document.getElementById("page");
+  const scroll = main.parentElement.scrollTop;
+  main.replaceChildren(...page);
+  main.parentElement.scrollTop = scroll;
+  renderSheet();
+}
+
+window.addEventListener("hashchange", () => {
+  const prev = state.route.page;
+  state.route = parseHash();
+  if (prev !== state.route.page) { state.editCharter = false; if (wsIdOf(state.route.page) !== state.ws?.workstream.id) state.ws = null; render(); load(); }
+  else render();
+});
+document.getElementById("backdrop").addEventListener("click", closeSheet);
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && state.route.id) { closeSheet(); return; }
+  if (e.target.matches("textarea, input, select") || e.metaKey || e.ctrlKey || e.altKey || !state.queue) return;
+  if (e.key === "r") { load(); return; }
+  if (state.route.page !== "queue" && !wsIdOf(state.route.page)) return;
+  const page = state.route.page, items = pageItems();
+  if (e.key === "j" || e.key === "ArrowDown") { state.sel = Math.min(state.sel + 1, items.length - 1); if (state.route.id && items[state.sel]) go(page, items[state.sel].id); else render(); e.preventDefault(); }
+  else if (e.key === "k" || e.key === "ArrowUp") { state.sel = Math.max(state.sel - 1, 0); if (state.route.id && items[state.sel]) go(page, items[state.sel].id); else render(); e.preventDefault(); }
+  else if (e.key === "Enter" && items[state.sel]) go(page, items[state.sel].id);
+  else if (e.key === "a" && state.route.id) { const it = findItem(state.route.id); if (it && NEEDS_REVIEW.includes(it.status)) decide(it, "approve"); }
+});
+
+document.getElementById("brandMark").append(icon("spark", 15));
+state.route = parseHash();
+// Refresh in the background, but never while typing, so in-progress edits aren't clobbered.
+setInterval(() => { if (!document.activeElement?.matches("textarea, input")) load(); }, 30000);
+load();
+</script>
+</body>
+</html>

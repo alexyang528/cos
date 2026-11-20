@@ -1,0 +1,9 @@
+[project]
+name = "cos"
+version = "0.1.0"
+description = "Personal chief-of-staff agent system"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false

@@ -1,0 +1,41 @@
+# Copy this file to me.toml and fill it in. me.toml is gitignored, so your details stay on your machine.
+
+name = "Jane Doe"
+email = "jane@example.com"
+
+# Who you are and what you work on, in the third person ("Jane is <about>"). Every lead's instructions start
+# from this, so name the areas you own: it is how the agents judge what needs you.
+about = """
+an engineer at <company> on <team>: <the areas, systems and kinds of requests you own>.
+"""
+
+# The GitHub repo most of your work lands in. Leads check PR status and read code here.
+github_repo = "your-org/your-repo"
+
+# Where "Start" on an item opens its agent prompt, and where "Resume" reopens a session:
+#   "desktop"  - a new Code session in the Claude desktop app, with the prompt drafted (press Enter to send)
+#   "terminal" - claude in a new terminal window (terminal_app below), optionally in a new git worktree
+#   "orca"     - an Orca workspace tab, optionally in a new Orca worktree
+launcher = "desktop"
+# For launcher = "terminal": any app that opens .command files, e.g. "Terminal", "iTerm", "Ghostty".
+terminal_app = "Terminal"
+
+[slack]
+# Your member ID: in Slack, open your profile, click the ⋮ menu, "Copy member ID".
+user_id = "U00000000"
+# Apps you @-mention in threads (e.g. a Claude bot). Replies after you invoke one are to the bot, not to you.
+bot_ids = []
+
+[notion]
+# Your Notion user id (a UUID). Ask Claude with the Notion connector: "what is my Notion user id?"
+user_id = "00000000-0000-0000-0000-000000000000"
+# Optional: a ticket database where you are a DRI, as "collection://<id>". Leave empty to scan only pages that
+# name you. The scan expects Name, ID, Status, Priority, Type, DRI and AI Summary properties.
+tickets_data_source = ""
+
+# Folders an agent session can start in. The lead picks one per prompt; "use_for" tells it when. Mark one default.
+[[workdirs]]
+name = "my-repo"
+path = "~/code/my-repo"
+use_for = "everything"
+default = true
