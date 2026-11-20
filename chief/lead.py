@@ -219,7 +219,7 @@ Item rules:
 - summary: 1 to 4 short lines, each starting with "- ": where the discussion stands now and exactly what is
   pending on {me}. Facts only, newest state first, no recommendation (that goes in body).
 - url: the link that opens the conversation: the Slack permalink of the thread (or DM message), the
-  Switchboard plan URL, or the Granola note URL.
+  Switchboard plan URL, the Granola note URL, or the GitHub PR URL.
 - One item may cover several routes about the same conversation, and one route (a meeting) may give several
   task items. If a route needs nothing after all, put it in "dropped" with a reason. Every route must appear
   in at least one item or in dropped.
@@ -261,13 +261,13 @@ Inbox:
 
 
 # Leads whose surface only reaches me when my input is required; an fyi from them is below the bar.
-NO_FYI_LEADS = {"slack", "notion", "email"}
+NO_FYI_LEADS = {"slack", "notion", "email", "github"}
 
 # Irreversible actions a lead may only propose as a revision answering my note, never on its own.
 INSTRUCTION_ONLY_ACTIONS = {"switchboard_close_plan"}
 
 SOURCE_HOSTS = {"slack": ".slack.com", "switchboard": "switchboard.checkhq.com", "granola": "notes.granola.ai",
-                "notion": ".notion.com", "email": "mail.google.com"}
+                "notion": ".notion.com", "email": "mail.google.com", "github": "github.com"}
 
 
 def pick_url(lead: str, proposed, scanned):

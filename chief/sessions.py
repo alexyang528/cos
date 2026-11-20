@@ -27,6 +27,7 @@ NOISE_PREFIXES = (
 SLACK_LINK = re.compile(r"https://[\w.-]*slack\.com/archives/([CDG][A-Z0-9]+)/p(\d{10})(\d{6})[^\s)>\]|]*")
 THREAD_TS = re.compile(r"thread_ts=(\d{9,11}\.\d{1,6})")
 PLAN = re.compile(r"\bpl_[0-9a-f]{32}\b")
+PR_LINK = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
 URL = re.compile(r"https?://[^\s)>\]|\"'`]+")
 
 
@@ -35,7 +36,7 @@ def _iso(dt: datetime) -> str:
 
 
 def refs_in(text: str) -> set[str]:
-    """Slack threads/messages and Switchboard plans a text points at, as comparable keys."""
+    """Slack threads/messages, Switchboard plans and GitHub PRs a text points at, as comparable keys."""
     refs = set()
     for m in SLACK_LINK.finditer(text):
         refs.add(f"slack:{m.group(1)}:{m.group(2)}.{m.group(3)}")
@@ -43,6 +44,7 @@ def refs_in(text: str) -> set[str]:
         if t:
             refs.add(f"slack:{m.group(1)}:{t.group(1)}")
     refs.update(f"switchboard:{p}" for p in PLAN.findall(text))
+    refs.update(f"github:{repo.lower()}#{n}" for repo, n in PR_LINK.findall(text))
     return refs
 
 
@@ -141,7 +143,7 @@ def index(conn: sqlite3.Connection) -> tuple[int, int]:
         skipped = int(sid in own or info["entrypoint"] == "sdk-cli" or in_repo or not info["prompts"])
         title = info["custom_title"] or info["ai_title"] or (info["prompts"][0][:80] if info["prompts"] else sid)
         refs, urls = set(), []
-        for text in info["prompts"]:
+        for text in info["prompts"] + info["prs"]:
             refs |= refs_in(text)
             urls += [u for u in URL.findall(text) if u not in urls]
         digest_path = None
@@ -284,17 +286,17 @@ def link(conn: sqlite3.Connection, *, dry_run: bool = False) -> None:
     me = config.ME_NAME
     prompt = f"""{prompts.SAFETY}
 You work for {me}'s leads (slack: Slack threads waiting on {me}; switchboard: Switchboard plans waiting on
-{me}; granola: action items from {me}'s meetings; workstream: the lead of one of {me}'s long-running projects,
-named in the item's "workstream"). {me} sometimes works on one of their items in a Claude Code session:
-researching it, drafting the answer, building the fix, or talking it through. Link each open item below to
+{me}; granola: action items from {me}'s meetings; github: PRs waiting on {me}'s review, and reviews of {me}'s
+PRs; workstream: the lead of one of {me}'s long-running projects, named in the item's "workstream").
+{me} sometimes works on one of their items in a Claude Code session: researching it, drafting the answer, building the fix, or talking it through. Link each open item below to
 the sessions that were about the same piece of work, so {me} can jump back into them. Then link sessions to
 the workstreams below.
 
 How to judge:
 - Same work means the session was about this conversation, plan, PR, bug, customer or launch. A shared broad
   topic (both are "about taxes", both touch the same repo) is not enough.
-- "sessions_that_link_this_source" lists sessions whose prompts contain this item's Slack thread or
-  Switchboard plan link. That is strong evidence; confirm it from the digest.
+- "sessions_that_link_this_source" lists sessions whose prompts contain this item's Slack thread,
+  Switchboard plan or PR link, or that opened its PR. That is strong evidence; confirm it from the digest.
 - Judge each item only against sessions with last_active after its consider_sessions_active_after, plus
   its sessions_that_link_this_source.
 - Shortlist from titles, PRs, links and opening prompts, then Read the digest file of each plausible session

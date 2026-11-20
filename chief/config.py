@@ -29,8 +29,8 @@ WORK_HOURS = (8, 19)          # local time, first and last hour a tick runs (inc
 WORK_DAYS = (0, 1, 2, 3, 4)   # Monday=0
 DAILY_AT = (18, 30)           # chief of staff, brain distill, cleanup
 WEB_PORT = 8787
-SCAN_SURFACES = ("slack", "switchboard", "granola", "notion", "email")
-ENABLED_LEADS = ("slack", "switchboard", "granola", "notion", "email")
+SCAN_SURFACES = ("slack", "switchboard", "granola", "notion", "email", "github")
+ENABLED_LEADS = ("slack", "switchboard", "granola", "notion", "email", "github")
 
 # Cleanup. Worktrees are only ever removed when clean, pushed and idle.
 LOG_RETENTION_DAYS = 30
@@ -44,6 +44,10 @@ SCAN_OVERLAP_S = 600
 # has been unchanged this long, so the lead reads the finished AI summary rather than one still generating.
 GRANOLA_LOOKBACK_DAYS = 2
 GRANOLA_SETTLE_MIN = 10
+
+# GitHub: review requests and reviews of my PRs older than this never reach the queue, so the first scan doesn't
+# file every stale request. Requests to my teams are ignored; only ones naming me count.
+GITHUB_LOOKBACK_DAYS = 14
 
 INTERN_BATCH = 40
 LEAD_BATCH = 15

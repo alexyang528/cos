@@ -66,9 +66,10 @@ def cmd_schedule(args):
 
 
 def cmd_scan(args):
-    from chief import scan_email, scan_granola, scan_notion, scan_slack, scan_switchboard, scan_workstreams
+    from chief import (scan_email, scan_github, scan_granola, scan_notion, scan_slack, scan_switchboard,
+                       scan_workstreams)
     scanners = {"slack": scan_slack, "switchboard": scan_switchboard, "granola": scan_granola, "notion": scan_notion,
-                "email": scan_email, "workstreams": scan_workstreams}
+                "email": scan_email, "github": scan_github, "workstreams": scan_workstreams}
     scanners[args.surface].run(db.open_db(), dry_run=args.dry_run)
 
 
@@ -423,7 +424,7 @@ def main(argv=None):
     ssub.add_parser("status")
     sch.set_defaults(fn=cmd_schedule)
     sc = sub.add_parser("scan", help="scan a surface for new events (read-only)")
-    sc.add_argument("surface", choices=["slack", "switchboard", "granola", "notion", "email", "workstreams"])
+    sc.add_argument("surface", choices=["slack", "switchboard", "granola", "notion", "email", "github", "workstreams"])
     sc.add_argument("--dry-run", action="store_true", help=dry)
     sc.set_defaults(fn=cmd_scan)
     it = sub.add_parser("intern", help="triage new events: route or skip (read-only)")

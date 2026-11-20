@@ -1,17 +1,18 @@
 # cos
 
-A personal chief of staff built on Claude Code. Every working hour it scans Slack, Gmail, Notion, Granola and
-Switchboard for things that need you. An intern triages them, and a lead per source researches each one and files
-it in a local queue. Each item has the context and links you need, and often a ready-to-launch agent prompt. Nothing
-is ever sent on your behalf; acting on an item is always your click.
+A personal chief of staff built on Claude Code. Every working hour it scans Slack, Gmail, Notion, Granola,
+Switchboard and GitHub for things that need you. An intern triages them, and a lead per source researches each one
+and files it in a local queue. Each item has the context and links you need, and often a ready-to-launch agent
+prompt. Nothing is ever sent on your behalf; acting on an item is always your click.
 
 It runs on your Mac, uses your own Claude Code login and claude.ai connectors, and keeps everything it reads in
 `data/`, which never leaves your machine.
 
 ## Setup
 
-1. Install [uv](https://docs.astral.sh/uv/) and [Claude Code](https://claude.com/claude-code), and sign in to
-   Claude Code.
+1. Install [uv](https://docs.astral.sh/uv/), [Claude Code](https://claude.com/claude-code) and the
+   [GitHub CLI](https://cli.github.com/), sign in to Claude Code, and run `gh auth login`. The GitHub scan uses
+   `gh` to find PRs that ask for your review and reviews of your own PRs.
 2. In claude.ai connector settings, connect Slack, Gmail, Notion, Granola and GitHub (plus Switchboard and the
    Check data connectors if you use them). The agents call these through `claude -p`.
 3. Fork this repo and clone your fork.

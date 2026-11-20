@@ -63,8 +63,8 @@ def _step(label, fn) -> bool:
 
 
 def tick(conn, *, force: bool = False) -> None:
-    from . import (intern, lead, memory, scan_email, scan_granola, scan_notion, scan_slack, scan_switchboard,
-                   scan_workstreams, sessions, workstreams, ws_lead)
+    from . import (intern, lead, memory, scan_email, scan_github, scan_granola, scan_notion, scan_slack,
+                   scan_switchboard, scan_workstreams, sessions, workstreams, ws_lead)
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     if _until_passed(conn):
         print(f"[{stamp}] tick: past the scheduled end time, uninstalling jobs")
@@ -82,7 +82,7 @@ def tick(conn, *, force: bool = False) -> None:
         if expired:
             print(f"rules: {expired} provisional rules expired")
         scanners = {"slack": scan_slack, "switchboard": scan_switchboard, "granola": scan_granola, "notion": scan_notion,
-                    "email": scan_email}
+                    "email": scan_email, "github": scan_github}
         for surface in config.SCAN_SURFACES:
             if not _step(f"scan {surface}", lambda s=surface: scanners[s].run(conn)):
                 return

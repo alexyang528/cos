@@ -23,9 +23,9 @@ FONTS = {"/fonts/inter.woff2": "Inter-Variable-latin.woff2", "/fonts/reddit-mono
 # Each service's own favicon, saved locally because the page's CSP allows no remote images. Switchboard's is
 # behind SSO, so it was copied from the switchboard repo (web/public/brand/apple-touch-icon-192.png).
 # Notion's comes from the Notion desktop app's icon (electron.icns), converted to PNG; Gmail's is Google's product
-# icon (gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png).
+# icon (gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png); GitHub's is github.com/fluidicon.png.
 LOGOS = {"/logos/slack.png": "slack.png", "/logos/granola.png": "granola.png", "/logos/switchboard.png": "switchboard.png",
-         "/logos/notion.png": "notion.png", "/logos/gmail.png": "gmail.png"}
+         "/logos/notion.png": "notion.png", "/logos/gmail.png": "gmail.png", "/logos/github.png": "github.png"}
 OPEN_STATUSES = ("pending", "changes_requested", "approved", "failed", "executing")
 DECISIONS = {
     "approve": "approved",
@@ -100,9 +100,11 @@ SOURCE_LABELS = {
     ("slack", "thread_reply"): "Slack thread", ("switchboard", None): "Switchboard plan",
     ("granola", None): "Granola meeting", ("notion", "ticket"): "Inbound Platform", ("notion", "mention"): "Notion page",
     ("email", "email"): "Email", ("email", "zendesk"): "Zendesk",
+    ("github", "review_request"): "GitHub review request", ("github", "pr_feedback"): "Review of your PR",
 }
 OWNER_LABELS = {"slack": "Slack", "switchboard": "Switchboard", "granola": "Granola", "notion": "Notion",
-                "email": "Email", "chief": "Chief of staff", "workstream": "Workstream", "todo": "To-do"}
+                "email": "Email", "github": "GitHub", "chief": "Chief of staff", "workstream": "Workstream",
+                "todo": "To-do"}
 
 
 def add_source_labels(conn, items: list[dict]) -> None:

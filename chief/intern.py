@@ -45,10 +45,13 @@ def pre_skip_reason(event) -> str | None:
 
 
 def pre_route_summary(event) -> str | None:
-    """Deterministic routes: a Switchboard plan of mine waiting on a human always needs me, every meeting I
-    attended goes to the granola lead, which drops it if nothing in it is mine to do, and so does a change to an
-    open Inbound Platform ticket I'm the DRI of (DRI-only edits are skipped first)."""
+    """Deterministic routes: a Switchboard plan of mine waiting on a human always needs me, and so does a PR
+    that asks for my review or a review of my PR I haven't answered. Every meeting I attended goes to the granola
+    lead, which drops it if nothing in it is mine to do, and so does a change to an open Inbound Platform ticket
+    I'm the DRI of (DRI-only edits are skipped first)."""
     p = json.loads(event["payload"])
+    if event["source"] == "github":
+        return event["text"][:200]
     if event["source"] == "notion" and event["kind"] == "ticket":
         changed = p.get("changed")
         what = ("new to you" if changed is None else f"{', '.join(changed)} changed" if changed
@@ -216,7 +219,8 @@ def _run_batch(conn: sqlite3.Connection, *, dry_run: bool = False) -> None:
         record(conn, e, "skip", reason=pre_skip_reason(e))
     for e in auto:
         record(conn, e, "route", summary=pre_route_summary(e),
-               reason={"granola": "rule: meeting you attended", "notion": "rule: ticket you are DRI of"}.get(
+               reason={"granola": "rule: meeting you attended", "notion": "rule: ticket you are DRI of",
+                       "github": "rule: PR waiting on you"}.get(
                    e["source"], "rule: plan waiting on you"))
     if not rest:
         print(f"intern: {len(auto)} auto-routed, {len(pre)} auto-skipped, nothing else to triage (no model call)")

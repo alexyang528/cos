@@ -944,7 +944,7 @@ function paneFoot(it) {
     actions ? el("div", { class: "pane-actions" }, actions) : null);
 }
 
-const SOURCE_LOGOS = { slack: "/logos/slack.png", granola: "/logos/granola.png", switchboard: "/logos/switchboard.png", notion: "/logos/notion.png", email: "/logos/gmail.png" };
+const SOURCE_LOGOS = { slack: "/logos/slack.png", granola: "/logos/granola.png", switchboard: "/logos/switchboard.png", notion: "/logos/notion.png", email: "/logos/gmail.png", github: "/logos/github.png" };
 const SOURCE_GLYPHS = { chief: "spark", todo: "check", workstream: "layers" };
 function sourceMark(lead, size = 18) {
   const label = lead.charAt(0).toUpperCase() + lead.slice(1);
@@ -960,6 +960,7 @@ function sourceLink(lead, href) {
   if (host === "notes.granola.ai") return { href, label: "Open in Granola" };
   if (host.endsWith("notion.com") || host.endsWith("notion.so")) return { href, label: "Open in Notion" };
   if (host === "mail.google.com") return { href, label: "Open in Gmail" };
+  if (host === "github.com") return { href, label: "Open in GitHub" };
   return { href, label: "Open source" };
 }
 
