@@ -130,12 +130,7 @@ def cmd_ws(args):
     if c == "show":
         d = ws.detail(conn, w["id"])
         print(f"{w['name']} ({w['slug']}, {w['status']})\n\n{w['description']}\n")
-        print("latest:\n" + (w["latest"] or "(not written yet)"))
-        print(f"\ngoals {d['week']}:")
-        for g in d["goals"]:
-            print(f"  [{g['id']}] {g['status']:<8} {g['health'] or '':<10} {g['text']}  {g['progress'] or ''}")
-        for g in d["unfinished"]:
-            print(f"  [{g['id']}] unfinished from {g['week']}: {g['text']}")
+        print("overview:\n" + (w["latest"] or "(not written yet)"))
         print("\nsources:")
         for s_ in d["sources"]:
             print(f"  [{s_['id']}] {s_['status']:<8} {s_['kind']:<16} {s_['label'] or s_['ref']}  {s_['why'] or ''}")
@@ -147,12 +142,10 @@ def cmd_ws(args):
         for s_ in links_for(conn, w["id"], 10):
             print(f"  {s_['last_at'][:16]}  {s_['title']}\n      {s_['why']}\n      {s_['resume']}")
         print("\nrecent updates:")
-        for u in d["updates"][:10]:
+        for u in d["updates"]:
             print(f"  {(u['occurred_at'] or u['created_at'])[:16]}  {u['text']}")
     elif c == "run":
         ws_lead.run(conn, w, reasons=["requested"], dry_run=args.dry_run)
-    elif c == "goal":
-        print(f"added goal #{ws.add_goal(conn, w['id'], args.text)} for {ws.week_of()}")
     elif c == "source":
         parsed = ws.parse_link(args.link)
         if not parsed:
@@ -454,15 +447,14 @@ def main(argv=None):
     wn.add_argument("name")
     wn.add_argument("--description", "-d", help="what it is and what done looks like")
     wn.add_argument("--link", action="append", help="a Slack channel/thread or Switchboard plan link (repeatable)")
-    for verb, help_ in (("show", "goals, latest, sources, items"), ("run", "run its lead now"),
+    for verb, help_ in (("show", "overview, sources, items"), ("run", "run its lead now"),
                         ("pause", "stop scanning and running its lead"), ("resume", "resume a paused workstream"),
                         ("archive", "close it; open items go back to the queue")):
         x = wsub.add_parser(verb, help=help_)
         x.add_argument("workstream", help="slug or id")
         if verb == "run":
             x.add_argument("--dry-run", action="store_true", help=dry)
-    for verb, arg, help_ in (("goal", "text", "add a goal for this week"),
-                             ("source", "link", "watch a Slack channel/thread or Switchboard plan"),
+    for verb, arg, help_ in (("source", "link", "watch a Slack channel/thread or Switchboard plan"),
                              ("instruct", "text", "tell the lead something; it runs on the next tick")):
         x = wsub.add_parser(verb, help=help_)
         x.add_argument("workstream", help="slug or id")

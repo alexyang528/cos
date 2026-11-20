@@ -285,22 +285,15 @@ details.panel-box[open] > summary::after { content: "Hide"; }
 details.panel-box > pre { margin: 0; padding: 12px 14px; border-top: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere;
                           font: 13px/1.5 var(--sans); color: var(--foreground); }
 .error { font-size: 13px; padding: 10px 12px; border-radius: 10px; background: var(--red-bg); color: var(--red-fg); overflow-wrap: anywhere; }
-.sessions { display: grid; gap: 8px; }
-.session { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
-.session-head { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; }
-.session-title { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
-.session-why, .session .cell-sub { font-size: 13px; color: var(--muted-foreground); overflow-wrap: anywhere; }
-.session .cell-sub { font-size: 12px; }
-.session-cmd { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
-.session-cmd code { flex: 1 1 240px; min-width: 0; font: 12px/1.4 var(--mono); padding: 6px 8px; border-radius: 8px; background: var(--muted);
-                    white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Workstreams */
 .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red-solid); flex: none; }
 .nav-row .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-row .spinner { width: 12px; height: 12px; margin: 0; color: var(--blue-solid); }
 .ws-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.ws-col { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.ws-col { display: grid; gap: 28px; align-content: start; min-width: 0; }
+.ws-col > * { min-width: 0; }
+.section-meta { font-size: 12px; color: var(--muted-foreground); }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .card-title { font-size: 14px; font-weight: 500; display: flex; gap: 8px; align-items: center; }
 .card-title svg { color: var(--muted-foreground); }
@@ -323,6 +316,9 @@ details.panel-box > pre { margin: 0; padding: 12px 14px; border-top: 1px solid v
 .form-grid textarea { min-height: 90px; }
 .instr { font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--muted); overflow-wrap: anywhere; }
 .instr .muted { font-size: 12px; }
+.overview { margin: 0; padding: 14px 18px 14px 34px; display: grid; gap: 8px; font-size: 14px; line-height: 1.5;
+            background: var(--pane-card); border-radius: 14px; }
+.overview li { overflow-wrap: anywhere; }
 .prose { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.55; }
 @media (max-width: 1000px) { .ws-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) { .row { flex-wrap: wrap; } .row-actions { margin-left: auto; } }
@@ -462,7 +458,7 @@ const NEEDS_REVIEW = ["pending", "changes_requested"];
 const state = { route: { page: "queue", id: null }, queue: null, recent: null, runs: null, ws: null,
                 source: "all", sel: 0, notes: {}, prompts: {}, workdirs: {}, worktrees: {}, promptOpen: {},
                 launching: new Set(), working: new Map(), pollTimer: null,
-                form: {}, editCharter: false, wsWasRunning: false };
+                form: {}, editCharter: false, wsTab: "overview", wsWasRunning: false };
 
 function parseHash() {
   const [page, id] = location.hash.replace(/^#\/?/, "").split("/");
@@ -743,17 +739,7 @@ const paneLabel = (text, tag = "h3") => el(tag, { class: "pane-label" }, text);
 function updatesSection(it) {
   let rows, timed = true;
   if (it.timeline?.length) {
-    let prevDay = null;
-    rows = it.timeline.map(r => {
-      const at = r.at ? new Date(r.at) : null;
-      if (!at || isNaN(at)) return { time: "", text: r.text };
-      const day = at.toDateString();
-      let time = day === prevDay ? hm(at) : `${at.toLocaleDateString([], { month: "short", day: "numeric" })}, ${hm(at)}`;
-      prevDay = day;
-      const until = r.until ? new Date(r.until) : null;
-      if (until && !isNaN(until) && hm(until) !== hm(at)) time += ` – ${hm(until)}`;
-      return { time, text: r.text };
-    });
+    rows = timelineRows(it.timeline);
   } else {
     rows = (it.summary || "").split("\n").map(l => l.replace(/^\s*[-•]\s*/, "").trim()).filter(Boolean).map(text => ({ time: "", text }));
     timed = false;
@@ -762,6 +748,19 @@ function updatesSection(it) {
   return el("section", { class: "pane-section" }, paneLabel("Latest updates"),
     el("div", { class: "timeline" + (timed ? "" : " no-time") }, rows.map(r =>
       el("div", { class: "tl-row" }, timed ? el("span", { class: "tl-time" }, r.time) : null, el("span", {}, r.text)))));
+}
+function timelineRows(entries) {
+  let prevDay = null;
+  return entries.map(r => {
+    const at = r.at ? new Date(r.at) : null;
+    if (!at || isNaN(at)) return { ...r, time: "" };
+    const day = at.toDateString();
+    let time = day === prevDay ? hm(at) : `${at.toLocaleDateString([], { month: "short", day: "numeric" })}, ${hm(at)}`;
+    prevDay = day;
+    const until = r.until ? new Date(r.until) : null;
+    if (until && !isNaN(until) && hm(until) !== hm(at)) time += ` – ${hm(until)}`;
+    return { ...r, time };
+  });
 }
 const hm = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -773,7 +772,7 @@ function sessionsSection(it) {
   if (!open && !sessions.length) return null;
   const formOpen = open && state.promptOpen[it.id];
   let list = null;
-  if (sessions.length) list = el("div", { class: "session-list" }, sessions.map(s => sessionRow(it, s)));
+  if (sessions.length) list = el("div", { class: "session-list" }, sessions.map(s => sessionRow(s, () => unlinkSession(it, s))));
   else if (!formOpen) list = el("div", { class: "pane-empty" },
     it.prompt ? "The lead drafted a prompt for this. New session opens it." : "No sessions yet.");
   return el("section", { class: "pane-section" },
@@ -828,7 +827,7 @@ async function launchSession(it, prompt, workdir, worktree, button) {
   await load();
 }
 
-function sessionRow(it, s) {
+function sessionRow(s, onUnlink) {
   const repo = (s.cwd || "").split("/").filter(Boolean).pop();
   const resume = el("button", { class: "btn btn-ghost btn-sm session-resume", "aria-label": `Resume ${s.title}` },
     icon("terminal", 14), "Resume");
@@ -859,7 +858,7 @@ function sessionRow(it, s) {
       el("summary", { "aria-label": "More actions" }, icon("more", 16)),
       el("div", { class: "row-menu-pop" },
         el("button", { onclick: e => { e.currentTarget.closest("details").open = false; copyText(s.resume, "Resume command copied"); } }, "Copy resume command"),
-        el("button", { title: "Not related; it won't be linked again", onclick: () => unlinkSession(it, s) }, "Unlink"))));
+        el("button", { title: "Not related; it won't be linked again", onclick: onUnlink }, "Unlink"))));
 }
 async function copyText(text, done) {
   try { await navigator.clipboard.writeText(text); toast(done); } catch { toast("Couldn't copy; select the command instead"); }
@@ -1011,7 +1010,6 @@ async function ruleAction(r, verb) {
 
 // ---- Workstreams ----------------------------------------------------------------------------------------
 
-const HEALTH = { on_track: ["On track", "green"], at_risk: ["At risk", "yellow"], blocked: ["Blocked", "red"], looks_done: ["Looks done", "blue"] };
 const FILED_BY = { source: "a watched source", intern: "the intern's judgment", lead: "the workstream's lead", user: "you" };
 const MOVABLE = ["pending", "approved", "failed"];
 
@@ -1033,14 +1031,6 @@ async function wsPost(path, body = {}, done = null) {
   } catch (e) { toast(e.message); return null; }
 }
 
-function goalBadge(g) {
-  if (g.status === "proposed") return badge(["Proposed", "blue"]);
-  if (g.status === "done") return badge(["Done", "green"]);
-  if (g.status === "dropped") return badge(["Dropped", "gray"]);
-  if (g.status === "carried") return badge(["Carried over", "gray"]);
-  return badge(HEALTH[g.health] || ["Open", "gray"]);
-}
-
 function renderWorkstreams() {
   const all = state.queue.workstreams;
   const create = async () => {
@@ -1055,25 +1045,24 @@ function renderWorkstreams() {
     }
   };
   return [
-    pageHeader("Workstreams", "Long-running projects you lead. Each has its own lead that tracks it, keeps your weekly goals current, and proposes next steps."),
+    pageHeader("Workstreams", "Long-running projects you lead. Each has its own lead that tracks it, keeps a short overview current, and proposes next steps."),
     el("div", { class: "card", style: "margin-bottom:16px" },
       el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("plus", 16), "New workstream")),
       el("div", { class: "form-grid" },
         el("div", {}, el("div", { class: "field-label" }, "Name"), field("wsName", { placeholder: "e.g. NV MBT credit handling" })),
         el("div", {}, el("div", { class: "field-label" }, "What it is, and what done looks like"),
-          field("wsDesc", { placeholder: "A few sentences. The lead drafts a charter and proposes goals from this." }, "textarea")),
+          field("wsDesc", { placeholder: "A few sentences. The lead drafts a charter from this." }, "textarea")),
         el("div", {}, el("div", { class: "field-label" }, el("span", {}, "Starting links (optional)"), el("span", {}, "Slack channels or threads, Switchboard plans; one per line")),
           field("wsLinks", { placeholder: "https://yourteam.slack.com/archives/C0123ABC" }, "textarea")),
         el("div", { class: "sheet-actions" },
           el("button", { class: "btn btn-primary", onclick: create }, "Create and start its lead"),
-          el("span", { class: "muted", style: "font-size:13px" }, "Its lead's first run looks for more sources and drafts a charter and goals, all for you to confirm.")))),
+          el("span", { class: "muted", style: "font-size:13px" }, "Its lead's first run looks for more sources and drafts a charter, for you to confirm.")))),
     all.length ? el("div", { class: "table-card" }, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Workstream"), el("th", {}, "Status"), el("th", { class: "right" }, "Needs you"),
         el("th", { class: "right hide-sm" }, "Lead last ran"))),
       el("tbody", {}, all.map(w => el("tr", { class: "clickable", onclick: () => go(`ws:${w.id}`) },
         el("td", {}, el("div", { class: "cell-title" }, w.name),
-          el("div", { class: "cell-sub" }, [w.proposed_goals ? `${w.proposed_goals} proposed goals` : null,
-            w.proposed_sources ? `${w.proposed_sources} proposed sources` : null].filter(Boolean).join(" · ") || w.slug)),
+          el("div", { class: "cell-sub" }, w.proposed_sources ? `${w.proposed_sources} proposed sources` : w.slug)),
         el("td", {}, badge({ active: ["Active", "green"], paused: ["Paused", "yellow"], archived: ["Archived", "gray"] }[w.status])),
         el("td", { class: "right num" }, w.needs_review || "", w.urgent ? el("span", { class: "nav-dot", style: "display:inline-block;margin-left:6px" }) : null),
         el("td", { class: "right muted hide-sm" }, w.running ? "running now" : (w.last_run_at ? ago(w.last_run_at) : "never")))))))
@@ -1102,80 +1091,67 @@ function renderWorkstream() {
     } }, "Archive") : null,
   ].filter(Boolean);
 
-  // Tell the lead
+  const proposedSources = d.sources.filter(s => s.status === "proposed").length;
+  const tabs = el("div", { class: "toolbar" }, el("div", { class: "tabs", role: "group", "aria-label": "View" },
+    [["overview", "Overview", null], ["settings", "Settings", proposedSources || null]].map(([k, label, c]) =>
+      el("button", { class: "tab", "aria-pressed": String(state.wsTab === k), onclick: () => { state.wsTab = k; render(); } },
+        label, c ? el("span", { class: "tab-count", title: `${c} proposed sources to review` }, c) : null))));
+
+  return [pageHeader(w.name, statusLine, ...actions), tabs,
+    ...(state.wsTab === "settings" ? wsSettings(d, base) : wsOverview(d, base))];
+}
+
+function wsOverview(d, base) {
+  const w = d.workstream, active = w.status === "active";
+  const bullets = (w.latest || "").split("\n").map(l => l.replace(/^\s*[-•]\s*/, "").trim()).filter(Boolean);
+  const sectionHead = (label, meta) => el("div", { class: "pane-section-head" }, paneLabel(label),
+    meta ? el("span", { class: "section-meta" }, meta) : null);
   const sendInstruction = async () => {
     const text = (state.form[`instr${w.id}`] || "").trim();
     if (!text) { toast("Type what you want the lead to do"); return; }
     if (await wsPost(`${base}/instruct`, { text }, "Sent to the lead. It's running now.")) clearField(`instr${w.id}`);
   };
-  const instrInput = field(`instr${w.id}`, { placeholder: active ? `Tell the lead, e.g. "my goals this week are…" or "stop watching #general"` : "Resume the workstream to talk to its lead", disabled: !active });
+  const instrInput = field(`instr${w.id}`, { placeholder: active ? `Tell the lead, e.g. "stop watching #general"` : "Resume the workstream to talk to its lead", disabled: !active });
   instrInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); sendInstruction(); } });
-  const talk = el("div", { class: "card" },
+  const last = d.instructions[0];
+  const talk = el("section", { class: "pane-section" }, sectionHead("Tell the lead"),
     el("div", { class: "instruct" }, instrInput, el("button", { class: "btn btn-primary", disabled: !active, onclick: sendInstruction }, icon("send", 16), "Send")),
-    d.running ? el("div", { class: "working", style: "margin-top:12px" }, el("span", { class: "spinner", "aria-hidden": "true" }),
-      el("div", {}, el("b", {}, "The lead is working. "), "Its updates, goals and proposals appear here when it's done.")) : null,
-    d.instructions.length ? el("div", { class: "rows", style: "margin-top:12px;gap:6px" }, d.instructions.slice(0, 3).map(i =>
-      el("div", { class: "instr" }, el("div", {}, el("b", {}, "You: "), i.text),
-        el("div", { class: "muted" }, i.response ? ["Lead: ", i.response] : "Waiting for the lead's next run")))) : null);
+    last ? el("div", { class: "instr" }, el("div", {}, el("b", {}, "You: "), last.text),
+      el("div", { class: "muted" }, last.response ? ["Lead: ", last.response] : "Waiting for the lead's next run")) : null);
 
-  // Needs you
+  const overview = el("section", { class: "pane-section" },
+    sectionHead("Overview", w.latest_at ? `updated ${ago(w.latest_at)}` : null),
+    bullets.length ? el("ul", { class: "overview" }, bullets.map(b => el("li", {}, b)))
+      : el("div", { class: "pane-empty" }, "The lead writes a short summary of where this stands on its next run."),
+    d.running ? el("div", { class: "working" }, el("span", { class: "spinner", "aria-hidden": "true" }),
+      el("div", {}, el("b", {}, "The lead is working. "), "The overview and timeline refresh when it's done.")) : null);
+
   state.sel = Math.min(state.sel, Math.max(d.items.length - 1, 0));
-  const needs = el("section", {},
-    el("div", { class: "card-head", style: "margin:0 0 10px" }, el("div", { class: "card-title" }, icon("inbox", 16), "Needs you"),
-      el("span", { class: "card-meta" }, queueSummary(d.items))),
+  const needs = el("section", { class: "pane-section" },
+    sectionHead("Needs you", queueSummary(d.items)),
     d.items.length ? itemTable(d.items, { selectable: true })
-      : el("div", { class: "table-card" }, emptyState("check", "Nothing needs you here", "Replies, decisions and next steps from this workstream's lead show up here.")));
+      : el("div", { class: "table-card" }, emptyState("check", "Nothing needs you here", "Decisions and next steps from this workstream's lead show up here.")));
 
-  // Updates
-  const updates = el("div", { class: "card" },
-    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("clock", 16), "Updates")),
-    d.updates.length ? el("div", { class: "rows" }, d.updates.slice(0, 25).map(u => {
-      const href = u.url && safeUrl(u.url);
-      const when = u.occurred_at || u.created_at;
-      return el("div", { class: "row" }, el("div", { class: "row-main" }, el("div", { class: "row-text" }, u.text),
-        el("div", { class: "row-sub" }, when ? new Date(when).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "",
-          href ? [" · ", el("a", { href, target: "_blank", rel: "noopener noreferrer" }, "Open")] : null)));
-    })) : el("div", { class: "muted", style: "font-size:13px" }, "The lead logs decisions, merges, phase changes and new risks here."));
+  const entries = d.updates.slice(0, 5).map(u => ({ at: u.occurred_at || u.created_at, text: u.text, url: u.url && safeUrl(u.url) }));
+  const timeline = el("section", { class: "pane-section" }, sectionHead("Timeline"),
+    entries.length ? el("div", { class: "timeline" }, timelineRows(entries).map(r =>
+      el("div", { class: "tl-row" }, el("span", { class: "tl-time" }, r.time),
+        el("span", {}, r.text, r.url ? [" ", el("a", { href: r.url, target: "_blank", rel: "noopener noreferrer" }, "Open")] : null))))
+      : el("div", { class: "pane-empty" }, "The lead logs decisions, merges, phase changes and new risks here."));
 
-  // Goals
-  const goalRow = (g, earlier = false) => el("div", { class: "row" },
-    el("div", {}, goalBadge(g)),
-    el("div", { class: "row-main" }, el("div", { class: "row-text" }, g.text),
-      g.progress ? el("div", { class: "row-sub" }, g.progress) : null,
-      earlier ? el("div", { class: "row-sub" }, `from ${g.week}`) : null,
-      g.status === "proposed" ? el("div", { class: "row-sub" }, "Proposed by the lead") : null),
-    el("div", { class: "row-actions" },
-      g.status === "proposed" ? [el("button", { class: "btn btn-outline btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/accept`) }, "Accept"),
-        el("button", { class: "btn btn-ghost btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/reject`) }, "Reject")] : null,
-      g.status === "open" && earlier ? el("button", { class: "btn btn-outline btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/carry`, {}, "Carried into this week") }, "Carry over") : null,
-      g.status === "open" && !earlier ? el("button", { class: "btn btn-outline btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/done`, {}, "Goal done") }, icon("check", 14), "Done") : null,
-      g.status === "open" ? el("button", { class: "btn btn-ghost btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/drop`) }, "Drop") : null,
-      ["done", "dropped"].includes(g.status) ? el("button", { class: "btn btn-ghost btn-xs", onclick: () => wsPost(`/api/goals/${g.id}/reopen`) }, "Reopen") : null));
-  const addGoal = async () => {
-    const text = (state.form[`goal${w.id}`] || "").trim();
-    if (!text) return;
-    if (await wsPost(`${base}/goal`, { text })) clearField(`goal${w.id}`);
-  };
-  const goalInput = field(`goal${w.id}`, { placeholder: "Add a goal for this week" });
-  goalInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addGoal(); } });
-  const doneCount = d.goals.filter(g => g.status === "done").length, counted = d.goals.filter(g => ["open", "done"].includes(g.status)).length;
-  const goals = el("div", { class: "card" },
-    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("target", 16), `This week · ${d.week.split("-")[1]}`),
-      el("span", { class: "card-meta" }, counted ? `${doneCount} of ${counted} done` : "")),
-    d.goals.length ? el("div", { class: "rows" }, d.goals.map(g => goalRow(g)))
-      : el("div", { class: "muted", style: "font-size:13px" }, "No goals yet this week. Add your own, or the lead proposes some on its next run."),
-    d.unfinished.length ? [el("div", { class: "subhead" }, "Unfinished from earlier weeks"), el("div", { class: "rows" }, d.unfinished.map(g => goalRow(g, true)))] : null,
-    el("div", { class: "inline-form" }, goalInput, el("button", { class: "btn btn-outline", onclick: addGoal }, "Add")));
+  const sessions = el("section", { class: "pane-section" }, sectionHead("Claude sessions", d.sessions.length > 8 ? `8 of ${d.sessions.length}` : null),
+    d.sessions.length ? el("div", { class: "session-list" }, d.sessions.slice(0, 8).map(s =>
+      sessionRow(s, () => wsPost(`${base}/unlink`, { session_id: s.session_id }, "Unlinked"))))
+      : el("div", { class: "pane-empty" }, "Claude Code sessions you spend on this project are linked here automatically."));
 
-  // Recently closed
-  const closed = d.closed.length ? el("div", { class: "card" },
-    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("archive", 16), "Recently closed")),
-    el("div", { class: "rows" }, d.closed.slice(0, 8).map(it => el("div", { class: "row clickable", onclick: () => go(state.route.page, it.id) },
-      el("div", { class: "row-main" }, el("div", { class: "row-title" }, it.title),
-        el("div", { class: "row-sub" }, `#${it.id} · ${it.kind} · ${ago(it.executed_at || it.decided_at || it.updated_at)}`)),
-      statusBadge(it.status))))) : null;
+  return [el("div", { class: "ws-grid" },
+    el("div", { class: "ws-col" }, talk, overview, needs),
+    el("div", { class: "ws-col" }, timeline, sessions))];
+}
 
-  // Sources
+function wsSettings(d, base) {
+  const w = d.workstream;
+
   const addSource = async () => {
     const link = (state.form[`src${w.id}`] || "").trim();
     if (!link) return;
@@ -1202,7 +1178,7 @@ function renderWorkstream() {
   };
   const proposed = d.sources.filter(s => s.status === "proposed"), watched = d.sources.filter(s => s.status === "active");
   const sources = el("div", { class: "card" },
-    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("chat", 16), "Sources"),
+    el("div", { class: "card-head" }, el("div", { class: "card-title" }, "Sources"),
       el("span", { class: "card-meta" }, `${watched.length} watched`)),
     proposed.length ? [el("div", { class: "subhead", style: "margin-top:0" }, "Proposed by the lead"), el("div", { class: "rows" }, proposed.map(srcRow)),
       watched.length ? el("div", { class: "subhead" }, "Watched") : null] : null,
@@ -1210,24 +1186,6 @@ function renderWorkstream() {
       : (proposed.length ? null : el("div", { class: "muted", style: "font-size:13px" }, "Nothing watched yet. The lead proposes sources on its first run.")),
     w.status !== "archived" ? el("div", { class: "inline-form" }, srcInput, el("button", { class: "btn btn-outline", onclick: addSource }, "Watch")) : null);
 
-  // Claude chats linked to this workstream
-  const chats = el("div", { class: "card" },
-    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("terminal", 16), "Claude chats"),
-      el("span", { class: "card-meta" }, d.sessions.length ? `${d.sessions.length} linked` : "")),
-    d.sessions.length ? el("div", { class: "sessions" }, d.sessions.slice(0, 8).map(cs => {
-      const where = [cs.cwd && cs.cwd.replace(/^\/Users\/[^/]+\//, "~/"), cs.branch].filter(Boolean).join(" · ");
-      return el("div", { class: "session" },
-        el("div", { class: "session-head" }, el("div", { class: "session-title" }, cs.title),
-          el("span", { class: "muted", style: "font-size:12px;white-space:nowrap" }, ago(cs.last_at))),
-        where ? el("div", { class: "cell-sub" }, where) : null,
-        cs.why ? el("div", { class: "session-why" }, cs.why) : null,
-        el("div", { class: "session-cmd" }, el("code", {}, cs.resume),
-          el("button", { class: "btn btn-outline btn-sm", onclick: () => copyText(cs.resume, "Resume command copied") }, "Copy"),
-          el("button", { class: "btn btn-ghost btn-sm", title: "Not related; it won't be linked again",
-            onclick: () => wsPost(`${base}/unlink`, { session_id: cs.session_id }, "Unlinked") }, "Unlink")));
-    })) : el("div", { class: "muted", style: "font-size:13px" }, "Claude Code sessions you spend on this project are linked here automatically, on each tick."));
-
-  // About: description and charter
   let charterBody;
   if (state.editCharter) {
     const ta = field(`charter${w.id}`, { "aria-label": "Charter" }, "textarea");
@@ -1240,8 +1198,8 @@ function renderWorkstream() {
   } else {
     charterBody = w.charter ? el("div", { class: "prose" }, w.charter) : el("div", { class: "muted", style: "font-size:13px" }, "No charter yet. The lead drafts one on its first run.");
   }
-  const about = el("div", { class: "card" },
-    el("div", { class: "card-head" }, el("div", { class: "card-title" }, icon("book", 16), "Charter"),
+  const charterCard = el("div", { class: "card" },
+    el("div", { class: "card-head" }, el("div", { class: "card-title" }, "Charter"),
       el("div", { class: "sheet-actions" }, el("span", { class: "card-meta" }, w.charter ? (w.charter_by === "user" ? "yours" : "drafted by the lead") : ""),
         !state.editCharter && w.status !== "archived" ? el("button", { class: "btn btn-ghost btn-xs", onclick: () => { state.editCharter = true; render(); } }, "Edit") : null)),
     charterBody,
@@ -1253,15 +1211,11 @@ function renderWorkstream() {
         r.error ? el("div", { class: "row-sub", style: "color:var(--red-fg)" }, r.error.slice(0, 200)) : null),
       badge(RUN_STATUS[r.status] || [r.status, "gray"])))))) : null;
 
-  return [
-    pageHeader(w.name, statusLine, ...actions),
-    el("div", { class: "ws-grid" },
-      el("div", { class: "ws-col" }, talk, needs, updates, goals, closed),
-      el("div", { class: "ws-col" }, sources, chats, about, runs)),
-  ];
+  return [el("div", { class: "ws-grid" },
+    el("div", { class: "ws-col" }, sources),
+    el("div", { class: "ws-col" }, charterCard, runs))];
 }
 
-// In the item sheet: which workstream an item is in, and moving it.
 function render() {
   if (!state.queue || !state.runs) return;
   renderChrome();
@@ -1277,7 +1231,7 @@ function render() {
 window.addEventListener("hashchange", () => {
   const prev = state.route.page;
   state.route = parseHash();
-  if (prev !== state.route.page) { state.editCharter = false; if (wsIdOf(state.route.page) !== state.ws?.workstream.id) state.ws = null; render(); load(); }
+  if (prev !== state.route.page) { state.editCharter = false; state.wsTab = "overview"; if (wsIdOf(state.route.page) !== state.ws?.workstream.id) state.ws = null; render(); load(); }
   else render();
 });
 document.getElementById("backdrop").addEventListener("click", closeSheet);

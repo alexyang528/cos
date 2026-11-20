@@ -39,7 +39,6 @@ ITEM_PATH = re.compile(r"^/api/items/(\d+)/([a-z]+)$")
 RULE_PATH = re.compile(r"^/api/rules/(\d+)/(confirm|retire)$")
 WS_GET = re.compile(r"^/api/workstreams/(\d+)$")
 WS_PATH = re.compile(r"^/api/workstreams/(\d+)/([a-z]+)$")
-GOAL_PATH = re.compile(r"^/api/goals/(\d+)/([a-z]+)$")
 SOURCE_PATH = re.compile(r"^/api/sources/(\d+)/(accept|reject|remove)$")
 # Workstreams whose lead this server started and hasn't finished; the page polls while one is running.
 RUNNING: set[int] = set()
@@ -316,12 +315,11 @@ def make_handler(token: str, port: int):
             return value
 
         def _workstream_post(self) -> bool:
-            """Workstream, goal, source and item-filing endpoints. Returns False if the path isn't one of them."""
+            """Workstream, source and item-filing endpoints. Returns False if the path isn't one of them."""
             from . import workstreams as ws
             path = self.path
-            m_ws, m_goal, m_src, m_item = (WS_PATH.match(path), GOAL_PATH.match(path), SOURCE_PATH.match(path),
-                                           ITEM_PATH.match(path))
-            if not (path == "/api/workstreams" or m_ws or m_goal or m_src
+            m_ws, m_src, m_item = WS_PATH.match(path), SOURCE_PATH.match(path), ITEM_PATH.match(path)
+            if not (path == "/api/workstreams" or m_ws or m_src
                     or (m_item and m_item.group(2) in ("move", "promote"))):
                 return False
             run_after, run_reasons = None, None
@@ -347,8 +345,6 @@ def make_handler(token: str, port: int):
                         if ws.get(conn, ws_id)["status"] != "active":
                             raise ws.Conflict("this workstream isn't active")
                         run_after, run_reasons = ws_id, ["requested"]
-                    elif verb == "goal":
-                        result["id"] = ws.add_goal(conn, ws_id, str(body.get("text") or ""))
                     elif verb == "source":
                         parsed = ws.parse_link(str(body.get("link") or ""))
                         if not parsed:
@@ -366,9 +362,6 @@ def make_handler(token: str, port: int):
                                          charter=body.get("charter"))
                     else:
                         return self._json(HTTPStatus.NOT_FOUND, {"error": "not found"}) or True
-                elif m_goal:
-                    ws.decide_goal(conn, int(m_goal.group(1)), m_goal.group(2), body.get("text"))
-                    result = {"ok": True}
                 elif m_src:
                     ws.decide_source(conn, int(m_src.group(1)), m_src.group(2))
                     result = {"ok": True}

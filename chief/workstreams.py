@@ -1,8 +1,8 @@
 """Workstreams: long-running projects I lead, each with its own lead agent.
 
-A workstream exists on its own: a charter, the sources it watches, weekly goals, a timeline of updates, and the
-latest on where it stands. Items are touchpoints that need me; an item in a workstream shows only there, never
-in the queue. Routing into a workstream is by source (a watched channel, thread or plan), by the intern's
+A workstream exists on its own: a charter, the sources it watches, a timeline of updates, and a short overview of
+where it stands (the `latest` column). Items are touchpoints that need me; an item in a workstream shows on its
+page and in the queue. Routing into a workstream is by source (a watched channel, thread or plan), by the intern's
 judgment, by the workstream's lead, or by me moving an item.
 """
 
@@ -10,7 +10,6 @@ import json
 import re
 import sqlite3
 import time
-from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 from . import config
@@ -34,15 +33,6 @@ URL_HOSTS = (".slack.com", "switchboard.checkhq.com", "notes.granola.ai")
 
 class Conflict(Exception):
     pass
-
-
-def week_of(d: date | None = None) -> str:
-    y, w, _ = (d or datetime.now().date()).isocalendar()
-    return f"{y}-W{w:02d}"
-
-
-def previous_week(d: date | None = None) -> str:
-    return week_of((d or datetime.now().date()) - timedelta(days=7))
 
 
 def safe_url(url) -> str | None:
@@ -378,67 +368,6 @@ def instruct(conn, ws_id: int, text: str) -> int:
     return conn.execute("INSERT INTO ws_instructions(workstream_id, text) VALUES (?, ?)", (ws_id, text)).lastrowid
 
 
-# --- goals --------------------------------------------------------------------------------------------------
-
-def add_goal(conn, ws_id: int, text: str, *, by: str = "user", week: str | None = None) -> int:
-    text = text.strip()
-    if not text:
-        raise ValueError("a goal needs text")
-    return conn.execute(
-        "INSERT INTO ws_goals(workstream_id, week, text, status, proposed_by) VALUES (?, ?, ?, ?, ?)",
-        (ws_id, week or week_of(), text[:500], "open" if by == "user" else "proposed", by)).lastrowid
-
-
-GOAL_TRANSITIONS = {
-    "accept": ({"proposed"}, "open"),
-    "reject": ({"proposed"}, "rejected"),
-    "done": ({"open"}, "done"),
-    "drop": ({"open"}, "dropped"),
-    "reopen": ({"done", "dropped"}, "open"),
-}
-
-
-def decide_goal(conn, goal_id: int, verb: str, text: str | None = None) -> None:
-    goal = conn.execute("SELECT * FROM ws_goals WHERE id = ?", (goal_id,)).fetchone()
-    if goal is None:
-        raise KeyError(f"no goal {goal_id}")
-    if verb == "edit":
-        if not (text or "").strip():
-            raise ValueError("a goal needs text")
-        conn.execute(f"UPDATE ws_goals SET text = ?, updated_at = {NOW} WHERE id = ?", (text.strip()[:500], goal_id))
-        return
-    if verb == "carry":
-        # Last week's unfinished goal becomes this week's; the old one is kept, marked carried.
-        if goal["status"] != "open" or goal["week"] == week_of():
-            raise Conflict("only an open goal from an earlier week can be carried over")
-        with transaction(conn):
-            conn.execute(f"UPDATE ws_goals SET status = 'carried', closed_at = {NOW}, updated_at = {NOW} WHERE id = ?",
-                         (goal_id,))
-            conn.execute("INSERT INTO ws_goals(workstream_id, week, text, status, proposed_by, carried_from, progress) "
-                         "VALUES (?, ?, ?, 'open', 'user', ?, ?)",
-                         (goal["workstream_id"], week_of(), goal["text"], goal_id, goal["progress"]))
-        return
-    if verb not in GOAL_TRANSITIONS:
-        raise ValueError(f"unknown goal action {verb!r}")
-    allowed, new = GOAL_TRANSITIONS[verb]
-    if goal["status"] not in allowed:
-        raise Conflict(f"goal {goal_id} is {goal['status']}")
-    closed = NOW if new in ("done", "dropped", "rejected") else "NULL"
-    conn.execute(f"UPDATE ws_goals SET status = ?, closed_at = {closed}, updated_at = {NOW} WHERE id = ?",
-                 (new, goal_id))
-
-
-def goals_for(conn, ws_id: int, week: str) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM ws_goals WHERE workstream_id = ? AND week = ? AND status != 'rejected' "
-                        "ORDER BY CASE status WHEN 'proposed' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, id",
-                        (ws_id, week)).fetchall()
-
-
-def unfinished_before(conn, ws_id: int, week: str) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM ws_goals WHERE workstream_id = ? AND week < ? AND status = 'open' "
-                        "ORDER BY week DESC, id", (ws_id, week)).fetchall()
-
-
 # --- read models for the UI ---------------------------------------------------------------------------------
 
 def summaries(conn) -> list[dict]:
@@ -447,8 +376,7 @@ def summaries(conn) -> list[dict]:
         "SUM(i.status IN ('pending','changes_requested')) AS needs_review, "
         "SUM(i.status IN ('pending','changes_requested') AND i.priority = 0) AS urgent, "
         "COUNT(i.id) AS open_items, "
-        "(SELECT COUNT(*) FROM ws_sources s WHERE s.workstream_id = w.id AND s.status = 'proposed') AS proposed_sources, "
-        "(SELECT COUNT(*) FROM ws_goals g WHERE g.workstream_id = w.id AND g.status = 'proposed') AS proposed_goals "
+        "(SELECT COUNT(*) FROM ws_sources s WHERE s.workstream_id = w.id AND s.status = 'proposed') AS proposed_sources "
         "FROM workstreams w LEFT JOIN items i ON i.workstream_id = w.id AND i.status IN "
         "('pending','changes_requested','approved','failed','executing') "
         "GROUP BY w.id ORDER BY CASE w.status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END, w.name"
@@ -458,19 +386,15 @@ def summaries(conn) -> list[dict]:
 
 def detail(conn, ws_id: int) -> dict:
     ws = dict(get(conn, ws_id))
-    week = week_of()
     sources = [dict(r) for r in conn.execute(
         "SELECT * FROM ws_sources WHERE workstream_id = ? AND status IN ('active','proposed') "
         "ORDER BY status DESC, id", (ws_id,))]
     return {
         "workstream": ws,
-        "week": week,
-        "goals": [dict(r) for r in goals_for(conn, ws_id, week)],
-        "unfinished": [dict(r) for r in unfinished_before(conn, ws_id, week)],
         "sources": sources,
         "updates": [dict(r) for r in conn.execute(
             "SELECT * FROM ws_updates WHERE workstream_id = ? ORDER BY COALESCE(occurred_at, created_at) DESC, id DESC "
-            "LIMIT 60", (ws_id,))],
+            "LIMIT 5", (ws_id,))],
         "instructions": [dict(r) for r in conn.execute(
             "SELECT * FROM ws_instructions WHERE workstream_id = ? ORDER BY id DESC LIMIT 8", (ws_id,))],
         "runs": [dict(r) for r in conn.execute(

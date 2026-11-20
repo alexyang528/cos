@@ -1,10 +1,10 @@
 """The lead for one workstream.
 
 Each run it reads what changed (new activity on watched sources, messages routed to it, my instructions and
-revision requests), rewrites the workstream's latest, logs updates, reports on this week's goals, and proposes
-items that need me: decisions and next-step tasks, with an agent prompt when the work is open-ended. It is
-read-only like every lead and drafts no replies: items wait in the workstream for me, and sources and goals it
-proposes wait for me to accept them.
+revision requests), rewrites the workstream's overview (the `latest` column), logs updates, and proposes items
+that need me: decisions and next-step tasks, with an agent prompt when the work is open-ended. It is read-only
+like every lead and drafts no replies: items wait in the workstream for me, and sources it proposes wait for me
+to accept them.
 
 Its memory between runs is what it wrote last time (the latest and the updates), not a resumed session.
 """
@@ -25,7 +25,6 @@ from .runner import preview, run_agent
 
 NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')"
 ITEM_KINDS = ("decision", "task")
-HEALTH = ("on_track", "at_risk", "blocked", "looks_done")
 # Next steps the lead raises on its own (not answering a route or a note), per run.
 MAX_OWN_ITEMS = 3
 
@@ -123,21 +122,15 @@ def check_target(action, channels: set[str], plans: set[str]) -> str | None:
 def build_prompt(conn, w, reasons, routes, revs, instrs, acts) -> str:
     me = config.ME_NAME
     agent = ws_agent(w["slug"])
-    week = ws.week_of()
     today = datetime.now()
     first = w["last_run_at"] is None
-    goals = [{"goal_id": g["id"], "text": g["text"], "status": g["status"], "health": g["health"],
-              "progress": g["progress"]} for g in ws.goals_for(conn, w["id"], week)]
-    earlier = [{"goal_id": g["id"], "week": g["week"], "text": g["text"], "progress": g["progress"]}
-               for g in ws.unfinished_before(conn, w["id"], week)]
-    needs_goals = not any(g["status"] in ("open", "proposed") for g in goals)
     sources = [dict(s) for s in conn.execute(
         "SELECT id AS source_id, kind, ref, label, url, status, why FROM ws_sources WHERE workstream_id = ? "
         "ORDER BY status, id", (w["id"],))]
     updates = [{"at": u["occurred_at"] or u["created_at"], "text": u["text"], "url": u["url"]} for u in conn.execute(
         "SELECT * FROM ws_updates WHERE workstream_id = ? ORDER BY id DESC LIMIT 15", (w["id"],))]
     open_items = [{"item_id": i["id"], "kind": i["kind"], "status": i["status"], "title": i["title"],
-                   "goal_id": i["goal_id"], "summary": i["summary"]}
+                   "summary": i["summary"]}
                   for i in store.queue(conn, ws.OPEN_ITEM_STATUSES, workstream_id=w["id"])]
     work = [{"route_id": r["route_id"], "intern_summary": r["summary"], "kind": r["kind"], "url": r["url"],
              "author": r["author"], "at": r["occurred_at"], "event": json.loads(r["payload"])} for r in routes]
@@ -170,8 +163,8 @@ This is your first run. Before anything else:
 - Write the first "latest" from what you found.""" if first else ""
     return f"""{prompts.SAFETY}
 You are the lead for one of {me}'s workstreams: "{w['name']}". A workstream is a long-running project {me}
-is leading. You keep track of it for {me}: where it stands, this week's goals, what happened, and what {me}
-should do next. Today is {today:%A %Y-%m-%d}, week {week}. You are running because: {"; ".join(reasons)}.
+is leading. You keep track of it for {me}: where it stands, what happened, and what {me} should do next.
+Today is {today:%A %Y-%m-%d}. You are running because: {"; ".join(reasons)}.
 
 What {me} wrote about this workstream:
 {w['description'] or "(nothing beyond the name)"}
@@ -195,30 +188,28 @@ What {me} has taught the system so far:
   source" sections. You never write messages for {me} to send: {me} answers people themselves.
 
 ## What to produce
-1. "latest": where the workstream stands now, rewritten in full every run. 3 to 8 lines, each starting
-   with "- ": decisions made, what is in flight and who owns it, what is blocked and on whom, what is
-   waiting on {me}. Facts with names, newest state first. Keep what is still true from the previous latest.
+1. "latest": the overview {me} reads first: where the workstream stands now, rewritten in full every run.
+   1 to 3 lines, each starting with "- ", each one short sentence: the current state, what is in flight or
+   blocked and on whom. Facts with names. Not a history (that goes in updates) and not a to-do list (that
+   goes in items).
 2. "updates": one entry per notable thing that happened since your last run: a decision, a merge or ship,
    a plan changing phase, someone committing to something, a new risk or blocker. Not chatter, not things
    already in the recent updates. Usually 0 to 5. Each: one sentence, the link, and when it happened.
-3. "goals": for each open goal this week, "health" (on_track, at_risk, blocked, or looks_done when the
-   evidence says it is finished) and "progress" (one line, with the evidence). Only {me} closes a goal.
-{"   There are no open goals for this week yet: propose 1 to 4 in proposed_goals, from the charter, the" + chr(10) + "   unfinished goals of earlier weeks, and what is in flight. Each is one outcome, checkable by Friday." if needs_goals else "   Propose new goals only when an instruction asks for them."}
-4. "items": only things that need {me}. No fyi items: what {me} should know goes in latest and updates.
+3. "items": only things that need {me}. No fyi items: what {me} should know goes in latest and updates.
    - decision: a choice only {me} can make. Body: the question, the options, your recommendation.
    - task: a concrete next step for {me}: answer a message in the inbox, nudge someone the work is stuck on,
-     move a goal forward, unblock someone, or close a gap nobody owns. Body: what to do first, then the facts
-     and links {me} needs to do it (findings, not a message to send). Set goal_id when it serves a goal.
+     move the work forward, unblock someone, or close a gap nobody owns. Body: what to do first, then the
+     facts and links {me} needs to do it (findings, not a message to send).
    - Either kind may carry an agent "prompt" (see Agent prompts below).
    Raise at most {MAX_OWN_ITEMS} items of your own per run (items not answering an inbox message), and never
    one that duplicates an open item below or in the queue. Fewer, sharper next steps are better than a list.
    If an open queue item that is in no workstream already covers a next step for this workstream, don't file
    a new one: list it in "adopt" and it moves here. Match on what needs doing, not on the link: one meeting
    or thread can give several distinct items. An item in another workstream stays there.
-5. "sources": channels, threads or plans you found that belong to this workstream and aren't listed below
+4. "sources": channels, threads or plans you found that belong to this workstream and aren't listed below
    in any status. Never propose a removed or rejected one again.
-6. "charter": {"your draft (first run)" if first else "null, unless an instruction asks you to change it"}.
-7. "instruction_replies": for each instruction, one or two sentences on what you did, or why you couldn't.
+5. "charter": {"your draft (first run)" if first else "null, unless an instruction asks you to change it"}.
+6. "instruction_replies": for each instruction, one or two sentences on what you did, or why you couldn't.
 
 Instructions from {me} (trusted; do what each asks within what you can output):
 {instr_block}
@@ -248,9 +239,7 @@ Item rules:
 Output schema:
 {{"latest": "- ...\\n- ...",
  "updates": [{{"text": "...", "url": "https://... or null", "occurred_at": "ISO time or null"}}],
- "goals": [{{"goal_id": 1, "health": "on_track", "progress": "..."}}],
- "proposed_goals": [{{"text": "..."}}],
- "items": [{{"route_ids": [], "goal_id": null, "kind": "decision" | "task", "title": "...",
+ "items": [{{"route_ids": [], "kind": "decision" | "task", "title": "...",
    "ask": "...", "requester": "... or null", "reference": "... or null",
    "timeline": [{{"at": "ISO time", "until": null, "text": "..."}}],
    "summary": "- ...", "body": "...", "priority": 1, "url": "https://...", "action": {{...}} | null,
@@ -261,7 +250,7 @@ Output schema:
    "kind": "null to keep, or decision / task", "action": "null to keep, or the new action",
    "prompt": "null to keep, \"\" to remove, or the new prompt", "workdir": "null to keep, or a workdir",
    "close": "true only to close the item because the note says it isn't needed", "why": "..."}}],
- "adopt": [{{"item_id": 28, "goal_id": null, "why": "..."}}],
+ "adopt": [{{"item_id": 28, "why": "..."}}],
  "dropped": [{{"route_id": 2, "reason": "..."}}],
  "sources": [{{"kind": "slack_channel" | "slack_thread" | "switchboard_plan",
    "ref": "C0123ABC, or C0123ABC:<thread ts>, or pl_<32 hex>", "label": "#channel or short name",
@@ -278,12 +267,6 @@ Output schema:
 {charter("switchboard")}
 
 ## State
-This week's goals ({week}):
-{prompts.untrusted("goals", goals) if goals else "(none)"}
-
-Unfinished goals from earlier weeks ({me} decides whether to carry them over):
-{prompts.untrusted("earlier-goals", earlier) if earlier else "(none)"}
-
 Sources (status active = watched; proposed = waiting for {me}; removed/rejected = never propose again):
 {prompts.untrusted("sources", sources) if sources else "(none yet)"}
 
@@ -340,7 +323,7 @@ def run(conn: sqlite3.Connection, w, *, reasons: list[str] | None = None, dry_ru
     data = result.data
     if routes and result.turns < 2 and data.get("items"):
         # As for the surface leads: new items written without reading the source are thrown away, but the rest
-        # (revisions answering my notes, latest, updates, goals) still applies.
+        # (revisions answering my notes, latest, updates) still applies.
         err = "lead answered without calling any tool; new items discarded, routes left in the inbox"
         conn.execute("UPDATE runs SET status = 'error', error = ? WHERE id = ?", (err, result.run_id))
         print(f"{label}: {err} (run {result.run_id}, ${result.cost_usd:.3f})")
@@ -351,10 +334,8 @@ def run(conn: sqlite3.Connection, w, *, reasons: list[str] | None = None, dry_ru
 def apply(conn, w, run_id: int, data: dict, routes, revs, instrs, acts, reasons, *, cost: float = 0.0) -> None:
     """Validate the lead's output and write it. Anything malformed is dropped and reported, never guessed at."""
     me = config.ME_NAME
-    week = ws.week_of()
     problems: list[str] = []
     channels, plans = _targets(conn, w, routes, revs)
-    open_goal_ids = {g["id"] for g in ws.goals_for(conn, w["id"], week) if g["status"] == "open"}
     instructed = bool(instrs)
 
     latest = str(data.get("latest") or "").strip()[:4000]
@@ -380,19 +361,6 @@ def apply(conn, w, run_id: int, data: dict, routes, revs, instrs, acts, reasons,
                          (w["id"], run_id, text[:600], ws.safe_url(u.get("url")), str(u.get("occurred_at") or "")[:40] or None))
             updates += 1
 
-    for g in data.get("goals") or []:
-        if g.get("goal_id") in open_goal_ids:
-            conn.execute(f"UPDATE ws_goals SET health = ?, progress = COALESCE(?, progress), updated_at = {NOW} "
-                         "WHERE id = ?", (g.get("health") if g.get("health") in HEALTH else None,
-                                          str(g.get("progress") or "")[:400] or None, g["goal_id"]))
-    proposed_goals = []
-    has_goals = any(g["status"] in ("open", "proposed") for g in ws.goals_for(conn, w["id"], week))
-    if not has_goals or instructed:
-        for g in (data.get("proposed_goals") or [])[:4]:
-            text = str((g or {}).get("text") or "").strip()
-            if text:
-                proposed_goals.append(ws.add_goal(conn, w["id"], text, by="lead", week=week))
-
     adopted = []
     for a in (data.get("adopt") or [])[:5]:
         item_id = (a or {}).get("item_id")
@@ -405,8 +373,7 @@ def apply(conn, w, run_id: int, data: dict, routes, revs, instrs, acts, reasons,
         except ws.Conflict as e:
             problems.append(f"adopt #{item_id}: {e}")
             continue
-        goal_id = a.get("goal_id") if a.get("goal_id") in open_goal_ids else None
-        conn.execute("UPDATE items SET filed_by = 'lead', goal_id = ? WHERE id = ?", (goal_id, item_id))
+        conn.execute("UPDATE items SET filed_by = 'lead' WHERE id = ?", (item_id,))
         adopted.append(item_id)
 
     route_ids = {r["route_id"]: r for r in routes}
@@ -443,7 +410,7 @@ def apply(conn, w, run_id: int, data: dict, routes, revs, instrs, acts, reasons,
                 prompt=prompt, workdir=clean_workdir(it.get("workdir"), prompt), **framing(it),
                 route_id=rids[0] if rids else None, run_id=run_id, rationale=it.get("why"),
                 summary=str(it.get("summary") or "")[:1200] or (route_ids[rids[0]]["summary"] if rids else None),
-                workstream_id=w["id"], goal_id=it.get("goal_id") if it.get("goal_id") in open_goal_ids else None,
+                workstream_id=w["id"],
                 filed_by=route_ids[rids[0]]["filed_by"] if rids else "lead",
             )
         except (ValueError, sqlite3.IntegrityError) as e:
@@ -498,7 +465,7 @@ def apply(conn, w, run_id: int, data: dict, routes, revs, instrs, acts, reasons,
     new_rules = lead_rules(conn, ws_agent(w["slug"]), data.get("rules") or [], run_id)
     left = len(route_ids) - len(covered)
     print(f"workstream {w['slug']}: {len(created)} items {created}, {len(adopted)} adopted {adopted}, {revised} revised, {updates} updates, "
-          f"goals proposed {proposed_goals}, sources proposed {proposed_sources}"
+          f"sources proposed {proposed_sources}"
           + (f", {left} routes left for next run" if left else "")
           + (f", provisional rules {new_rules}" if new_rules else "")
           + f" (run {run_id}, ${cost:.3f})")
