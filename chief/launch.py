@@ -2,7 +2,8 @@
 
 Where they open is config.LAUNCHER; a resume can name another launcher:
 - desktop: a new Code session in the Claude desktop app (claude://code/new), with the prompt drafted for me to send.
-  Resume opens the app's own record of the session (claude://code/continue), or a terminal if the app has none.
+  Resume opens the app's own record of the session (claude://code/continue), or, for a session started elsewhere,
+  has the app import it from its transcript (claude://resume).
 - terminal: claude in a new terminal window, run from a .command file (no Automation permission needed), optionally
   in a new git worktree (claude --worktree).
 - orca: a new Orca worktree (`orca worktree create --agent`) or the folder's main checkout (`orca agent launch`).
@@ -228,11 +229,12 @@ def resume(conn, session_id: str, where: str | None = None) -> str:
         local_id = desktop_session(session_id)
         if local_id:
             _open(f"claude://code/continue?{urlencode({'session': local_id})}")
-            return "the Claude app"
+        else:
+            _open(f"claude://resume?{urlencode({'session': session_id})}")
+        return "the Claude app"
     if where == "orca":
         _resume_orca(cwd, session_id, row["title"])
         return "Orca"
-    # A session the desktop app never saw (started in Orca or a terminal) resumes in a terminal.
     _run_in_terminal(_launch_dir() / f"resume-{session_id[:8]}-{int(time.time())}", cwd,
                      shlex.join([_claude_bin(), "--resume", session_id]))
     return config.TERMINAL_APP
