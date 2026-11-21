@@ -1153,7 +1153,7 @@ function renderChief() {
       !i.finished_at ? el("div", { class: "working", style: "margin-top:10px" }, el("span", { class: "spinner", "aria-hidden": "true" }),
         el("div", {}, i.picked_up_at ? "Running the agents it started…" : "The chief of staff is working on this…")) : null)))
       : el("div", { class: "table-card" }, emptyState("spark", "Nothing yet", "What you tell the chief of staff, and what it did, shows up here.")),
-    section("Needs you", "Problems in the system a rule can't fix: scanner or code bugs, config, recurring failures.", needs.map(noteCard)),
+    section("FYI", "Problems in the system a rule can't fix: scanner or code bugs, config, recurring failures.", needs.map(noteCard)),
     section("Fixed on its own", "Problems it fixed with provisional rules. They expire in 7 days unless you confirm them.", fixed.map(noteCard)),
   ];
 }

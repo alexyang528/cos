@@ -33,7 +33,7 @@ def cmd_notes(args):
         print(f"note #{args.dismiss} dismissed")
         return
     for n in tell.notes(conn):
-        print(f"#{n['id']:<4} {'NEEDS YOU' if n['needs_me'] else 'fixed':<9} {n['created_at'][:10]}  {n['title']}")
+        print(f"#{n['id']:<4} {'fyi' if n['needs_me'] else 'fixed':<5} {n['created_at'][:10]}  {n['title']}")
         for r in n["rules"]:
             print(f"      rule #{r['id']} ({r['status']}, {r['agent']}): {r['text']}")
 
