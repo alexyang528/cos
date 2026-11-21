@@ -261,6 +261,9 @@ Item rules:
   pending on {me}. Facts only, newest state first, no recommendation (that goes in body).
 - url: the link that opens the conversation: the Slack permalink of the thread (or DM message), the
   Switchboard plan URL, the Granola note URL, or the GitHub PR URL.
+- A route of kind "manual" is one {me} sent through the chief of staff to be tracked; its text is {me}'s note.
+  Always queue it (never drop it as below the bar), read the conversation, and frame the item by the note. Only
+  if it repeats one of the open items below, drop it and name that item.
 - One item may cover several routes about the same conversation, and one route (a meeting) may give several
   task items. If a route needs nothing after all, put it in "dropped" with a reason. Every route must appear
   in at least one item or in dropped.

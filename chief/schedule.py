@@ -64,7 +64,7 @@ def _step(label, fn) -> bool:
 
 def tick(conn, *, force: bool = False) -> None:
     from . import (intern, lead, memory, scan_email, scan_github, scan_granola, scan_notion, scan_slack,
-                   scan_switchboard, scan_workstreams, sessions, workstreams, ws_lead)
+                   scan_switchboard, scan_workstreams, sessions, tell, workstreams, ws_lead)
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     if _until_passed(conn):
         print(f"[{stamp}] tick: past the scheduled end time, uninstalling jobs")
@@ -93,6 +93,9 @@ def tick(conn, *, force: bool = False) -> None:
                 return
         if not _step("intern", lambda: intern.run(conn)):
             return
+        # Before the leads, so a conversation I asked the chief to track is filed in this tick.
+        if not _step("tell", lambda: tell.run(conn)):
+            return
         for name in config.ENABLED_LEADS:
             if not _step(f"lead {name}", lambda n=name: lead.run(conn, n)):
                 return
@@ -120,6 +123,20 @@ def run_lead_now(name: str) -> str:
         conn = db.open_db()
         try:
             lead.run(conn, name)
+        finally:
+            conn.close()
+    return "ran"
+
+
+def run_chief_now() -> str:
+    """Answer my instructions to the chief of staff now (from the web app), sharing the tick lock."""
+    from . import db, tell
+    with _Lock("tick") as got:
+        if not got:
+            return "busy"  # the running tick answers them too, right after triage
+        conn = db.open_db()
+        try:
+            tell.run(conn)
         finally:
             conn.close()
     return "ran"

@@ -15,6 +15,16 @@ def cmd_chief(args):
     chief.run(db.open_db(), dry_run=args.dry_run)
 
 
+def cmd_tell(args):
+    from chief import tell
+    conn = db.open_db()
+    if args.text:
+        tell.add(conn, args.text)
+    tell.run(conn, dry_run=args.dry_run)
+    for i in tell.recent(conn, 1):
+        print(f"\n{i['response'] or ''}\n" + "".join(f"- {a}\n" for a in i["actions"]))
+
+
 def cmd_brain(args):
     from chief import memory
     memory.distill(db.open_db(), dry_run=args.dry_run)
@@ -413,6 +423,10 @@ def main(argv=None):
     ch = sub.add_parser("chief", help="chief of staff: review rules, audit routing (read-only)")
     ch.add_argument("--dry-run", action="store_true", help=dry)
     ch.set_defaults(fn=cmd_chief)
+    te = sub.add_parser("tell", help="tell the chief of staff something: track a thread, add a rule, rerun an agent")
+    te.add_argument("text", nargs="?", help="the instruction (omit to answer ones already waiting)")
+    te.add_argument("--dry-run", action="store_true", help=dry)
+    te.set_defaults(fn=cmd_tell)
     br = sub.add_parser("brain", help="distill preferences from your queue decisions into brain.md")
     br.add_argument("--dry-run", action="store_true", help=dry)
     br.set_defaults(fn=cmd_brain)

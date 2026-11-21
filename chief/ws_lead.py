@@ -234,7 +234,8 @@ Item rules:
   characters.
 - summary: 1 to 4 lines, each starting with "- ": what is pending on {me} and why now. Facts only.
 - url: the link that opens the conversation (Slack permalink, Switchboard plan URL, or Granola note URL).
-- Every inbox route goes in at least one item or in dropped. One item may cover several routes.
+- Every inbox route goes in at least one item or in dropped. One item may cover several routes. A route of kind
+  "manual" is one {me} asked to track (its text is {me}'s note): always queue it unless it repeats an open item.
 
 {framing_rules()}
 

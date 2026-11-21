@@ -298,6 +298,10 @@ details.panel-box > pre { margin: 0; padding: 12px 14px; border-top: 1px solid v
 .nav-row .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-tag { margin-left: auto; flex: none; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--blue-bg); color: var(--blue-fg); }
 .proposal-why { font-size: 14px; line-height: 1.5; }
+.tell-list { display: flex; flex-direction: column; gap: 12px; }
+.tell-ask { font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tell-reply { margin-top: 10px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+.tell-actions { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted-foreground); }
 .nav-row .spinner { width: 12px; height: 12px; margin: 0; color: var(--blue-solid); }
 .ws-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .ws-col { display: grid; gap: 28px; align-content: start; min-width: 0; }
@@ -480,7 +484,7 @@ const state = { route: { page: "queue", id: null }, queue: null, recent: null, r
 
 function parseHash() {
   const [page, id] = location.hash.replace(/^#\/?/, "").split("/");
-  const known = ["queue", "closed", "rules", "runs", "workstreams"].includes(page) || /^wsp?:\d+$/.test(page || "");
+  const known = ["queue", "closed", "chief", "rules", "runs", "workstreams"].includes(page) || /^wsp?:\d+$/.test(page || "");
   return { page: known ? page : "queue", id: id ? Number(id) : null };
 }
 const wsIdOf = page => (page || "").startsWith("ws:") ? Number(page.slice(3)) : null;
@@ -509,7 +513,8 @@ async function load() {
       }
     }
     clearTimeout(state.pollTimer);
-    if (open.some(i => i.status === "executing") || state.working.size || (ws && ws.running)) state.pollTimer = setTimeout(load, 4000);
+    const chiefBusy = (queue.chief_instructions || []).some(i => !i.finished_at);
+    if (open.some(i => i.status === "executing") || state.working.size || (ws && ws.running) || chiefBusy) state.pollTimer = setTimeout(load, 4000);
   } catch (e) { toast("Couldn't load: " + e.message); }
 }
 
@@ -519,6 +524,7 @@ function renderChrome() {
   const nav = [
     ["queue", "Queue", "inbox", count(NEEDS_REVIEW)],
     ["closed", "Recently closed", "archive", null],
+    ["chief", "Chief of staff", "spark", (q.chief_instructions || []).filter(i => !i.finished_at).length || null],
     ["rules", "Rules", "book", q.rules.filter(x => x.status === "provisional").length || null],
     ["runs", "Runs & costs", "activity", r.summary.reduce((n, s) => n + (s.last_status === "error" ? 1 : 0), 0) || null],
   ];
@@ -1104,6 +1110,35 @@ async function wsPost(path, body = {}, done = null) {
   } catch (e) { toast(e.message); return null; }
 }
 
+// Talking to the chief of staff: what I asked, what it said, and what it actually did (recorded by the server).
+function renderChief() {
+  const list = state.queue.chief_instructions || [];
+  const send = async () => {
+    const text = (state.form.tell || "").trim();
+    if (!text) { toast("Tell the chief of staff what you want"); return; }
+    const res = await wsPost("/api/chief", { text }, "Sent to the chief of staff");
+    if (res) { clearField("tell"); render(); }
+  };
+  const box = field("tell", { placeholder: "e.g. The Slack lead missed this thread, track it: https://…  ·  Add a rule: never queue #random  ·  Rerun the GitHub lead" }, "textarea");
+  box.addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } });
+  return [
+    pageHeader("Chief of staff", "Tell it what you want: track a conversation the system missed (it also works out why, and fixes the rules), add or retire a rule, or rerun an agent."),
+    el("div", { class: "card", style: "margin-bottom:16px" },
+      el("div", { class: "form-grid" }, box,
+        el("div", { class: "sheet-actions" },
+          el("button", { class: "btn btn-primary", onclick: send }, icon("arrowUp", 15), "Send"),
+          el("span", { class: "muted", style: "font-size:13px" }, "⌘Enter to send. It answers here, usually within a minute or two.")))),
+    list.length ? el("div", { class: "tell-list" }, list.map(i => el("div", { class: "card" },
+      el("div", { class: "row-sub" }, ago(i.created_at)),
+      el("div", { class: "tell-ask" }, i.text),
+      i.response ? el("div", { class: "tell-reply" }, i.response) : null,
+      i.actions.length ? el("ul", { class: "tell-actions" }, i.actions.map(a => el("li", {}, a))) : null,
+      !i.finished_at ? el("div", { class: "working", style: "margin-top:10px" }, el("span", { class: "spinner", "aria-hidden": "true" }),
+        el("div", {}, i.picked_up_at ? "Running the agents it started…" : "The chief of staff is working on this…")) : null)))
+      : el("div", { class: "table-card" }, emptyState("spark", "Nothing yet", "What you tell the chief of staff, and what it did, shows up here.")),
+  ];
+}
+
 function renderWorkstreams() {
   const all = state.queue.workstreams;
   const create = async () => {
@@ -1336,7 +1371,7 @@ function render() {
   if (!state.queue || !state.runs) return;
   renderChrome();
   const page = wsIdOf(state.route.page) ? renderWorkstream() : proposalIdOf(state.route.page) ? renderProposal()
-    : { queue: renderQueue, closed: renderClosed, rules: renderRules, runs: renderRuns, workstreams: renderWorkstreams }[state.route.page]();
+    : { queue: renderQueue, closed: renderClosed, chief: renderChief, rules: renderRules, runs: renderRuns, workstreams: renderWorkstreams }[state.route.page]();
   const main = document.getElementById("page");
   const scroll = main.parentElement.scrollTop;
   main.replaceChildren(...page);

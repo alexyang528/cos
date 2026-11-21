@@ -55,6 +55,13 @@ def run_lead_in_background(name: str) -> None:
     threading.Thread(target=run_lead_now, args=(name,), daemon=True).start()
 
 
+def run_chief_in_background() -> None:
+    import threading
+
+    from .schedule import run_chief_now
+    threading.Thread(target=run_chief_now, daemon=True).start()
+
+
 def run_workstream_in_background(ws_id: int, reasons: list[str] | None = None) -> None:
     import threading
 
@@ -147,7 +154,7 @@ def add_source_labels(conn, items: list[dict]) -> None:
 
 def snapshot(conn, include_recent: bool) -> dict:
     from .sessions import links_for
-    from . import launch, workstreams
+    from . import launch, tell, workstreams
     items = by_review_order([item_json(r) for r in store.queue(conn, OPEN_STATUSES)])
     recent = []
     if include_recent:
@@ -175,6 +182,7 @@ def snapshot(conn, include_recent: bool) -> dict:
         "leads": [*config.ENABLED_LEADS, "workstream"],
         "workstreams": [{**w, "running": w["id"] in RUNNING} for w in workstreams.summaries(conn)],
         "ws_proposals": workstreams.pending_proposals(conn),
+        "chief_instructions": tell.recent(conn, 15),
         "workdirs": list(config.SESSION_WORKDIRS),
         "default_workdir": config.DEFAULT_WORKDIR,
         "worktree_by_default": sorted(config.WORKTREE_BY_DEFAULT),
@@ -335,6 +343,21 @@ def make_handler(token: str, port: int):
             else:
                 run_lead_in_background(item["lead"])
             return self._json(HTTPStatus.ACCEPTED, {"ok": True, "status": "with lead"})
+
+        def _tell_chief(self):
+            """Queue my instruction for the chief of staff and answer it now (or in the running tick)."""
+            from . import tell
+            try:
+                text = str(self._payload().get("text") or "")
+                conn = db.open_db()
+                try:
+                    instr_id = tell.add(conn, text)
+                finally:
+                    conn.close()
+            except ValueError as e:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+            run_chief_in_background()
+            return self._json(HTTPStatus.ACCEPTED, {"ok": True, "id": instr_id})
 
         def _proposal(self, proposal_id: str, verb: str):
             """Create or reject a workstream the chief of staff suggested. Creating one starts its lead."""
@@ -558,6 +581,8 @@ def make_handler(token: str, port: int):
                 return self._resume()
             if self.path == "/api/items/close-likely-done":
                 return self._close_likely_done()
+            if self.path == "/api/chief":
+                return self._tell_chief()
             if PROPOSAL_PATH.match(self.path):
                 return self._proposal(*PROPOSAL_PATH.match(self.path).groups())
             m = ITEM_PATH.match(self.path)

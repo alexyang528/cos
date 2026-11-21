@@ -548,6 +548,25 @@ MIGRATIONS: tuple[Migration, ...] = (
             "CREATE INDEX ws_proposals_status ON ws_proposals(status)",
         ),
     ),
+    # What I tell the chief of staff directly. picked_up_at: a chief run took it and applied its actions;
+    # finished_at: the agents it started have finished too. actions is a JSON list of what was actually done.
+    Migration(
+        17,
+        "instructions to the chief of staff",
+        (
+            f"""
+            CREATE TABLE chief_instructions (
+                id INTEGER PRIMARY KEY,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT {NOW},
+                picked_up_at TEXT,
+                finished_at TEXT,
+                run_id INTEGER REFERENCES runs(id),
+                response TEXT,
+                actions TEXT
+            )""",
+        ),
+    ),
 )
 
 assert [m.version for m in MIGRATIONS] == list(range(1, len(MIGRATIONS) + 1)), "migration versions must be contiguous"
