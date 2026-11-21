@@ -31,7 +31,15 @@ def gather(conn: sqlite3.Connection) -> dict:
         f"SELECT job, lead, status, error, cost_usd FROM runs "
         f"WHERE started_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-{AUDIT_HOURS} hours') AND status = 'error'"
     )]
-    return {"rules": rules, "routing": routing, "failed_runs": runs}
+    # Items that expired because I never touched them: the strongest sign a route or item wasn't worth raising.
+    expired = [dict(r) for r in conn.execute(
+        f"SELECT i.id AS item_id, i.lead, i.kind, i.title, i.requester, i.created_at, w.name AS workstream, "
+        f"e.source, e.kind AS event_kind, e.author, r.summary AS intern_summary, r.reason AS route_reason "
+        f"FROM items i LEFT JOIN routes r ON r.id = i.route_id LEFT JOIN events e ON e.id = r.event_id "
+        f"LEFT JOIN workstreams w ON w.id = i.workstream_id WHERE i.status = 'expired' "
+        f"AND i.decided_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-{AUDIT_HOURS} hours') ORDER BY i.id"
+    )]
+    return {"rules": rules, "routing": routing, "failed_runs": runs, "expired_items": expired}
 
 
 def build_prompt(data: dict) -> str:
@@ -51,6 +59,11 @@ You are the chief of staff in {me}'s agent system. You supervise the other agent
    when they share a cause {me} could fix (a rule that fires too broadly, a scanner bug, a misread identity),
    and name the cause. Don't list one-off routes that a lead already dropped (lead_outcome "dropped: ...").
 3. Failed runs: summarize anything {me} should fix, as findings.
+4. Expired items: queued items {me} never touched for {config.EXPIRE_AFTER_DAYS} days, so they closed on their
+   own. Treat them as items that weren't worth raising. When several share a cause (the same channel, requester,
+   event kind, lead or kind of ask), say what it is and what would stop it as one finding: a narrower intern
+   rule, a lead dropping that kind of route. Use them as evidence in the routing audit and rule reviews too: a
+   provisional rule that keeps such routes coming should be retired. One expiry alone needs no finding.
 
 Output schema:
 {{"rule_reviews": [{{"rule_id": 1, "verdict": "confirm" | "retire" | "leave", "reason": "..."}}],

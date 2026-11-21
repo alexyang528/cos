@@ -18,9 +18,9 @@ from .leads import SOURCE_TO_LEAD
 from .policy import ACTION_SURFACE
 
 NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')"
-OPEN_ITEM_STATUSES = ("pending", "changes_requested", "approved", "failed", "executing")
+OPEN_ITEM_STATUSES = ("pending", "likely_done", "changes_requested", "approved", "failed", "executing")
 # Items a move or adoption may carry; executing is mid-send and changes_requested is mid-revision by a lead.
-MOVABLE_STATUSES = ("pending", "approved", "failed")
+MOVABLE_STATUSES = ("pending", "likely_done", "approved", "failed")
 SOURCE_KINDS = ("slack_channel", "slack_thread", "switchboard_plan")
 
 CHANNEL = re.compile(r"^[CDG][A-Z0-9]{6,}$")
@@ -340,7 +340,8 @@ def archive(conn, ws_id: int) -> int:
     with transaction(conn):
         returned = 0
         for item in conn.execute("SELECT * FROM items WHERE workstream_id = ? AND status IN "
-                                 "('pending','changes_requested','approved','failed')", (ws_id,)).fetchall():
+                                 "('pending','likely_done','changes_requested','approved','failed')",
+                                 (ws_id,)).fetchall():
             if item["route_id"] is None and item["filed_by"] == "lead":
                 conn.execute(f"UPDATE items SET status = 'dismissed', decided_at = {NOW}, updated_at = {NOW}, "
                              "feedback = 'workstream archived' WHERE id = ?", (item["id"],))
@@ -378,7 +379,7 @@ def summaries(conn) -> list[dict]:
         "COUNT(i.id) AS open_items, "
         "(SELECT COUNT(*) FROM ws_sources s WHERE s.workstream_id = w.id AND s.status = 'proposed') AS proposed_sources "
         "FROM workstreams w LEFT JOIN items i ON i.workstream_id = w.id AND i.status IN "
-        "('pending','changes_requested','approved','failed','executing') "
+        "('pending','likely_done','changes_requested','approved','failed','executing') "
         "GROUP BY w.id ORDER BY CASE w.status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END, w.name"
     ).fetchall()
     return [{**dict(r), "needs_review": r["needs_review"] or 0, "urgent": r["urgent"] or 0} for r in rows]

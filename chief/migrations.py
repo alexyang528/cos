@@ -1,6 +1,61 @@
 from dataclasses import dataclass
 
 NOW = "(strftime('%Y-%m-%dT%H:%M:%SZ','now'))"
+# Every items column as of v12, for copying the table when it is rebuilt.
+_ITEM_COLS_V12 = (
+    "id, lead, kind, title, body, original_body, action, priority, status, feedback, url, route_id, "
+    "created_by_run_id, exec_run_id, exec_error, created_at, updated_at, decided_at, executed_at, rationale, "
+    "summary, sessions_checked_at, workstream_id, goal_id, filed_by, prompt, original_prompt, workdir, "
+    "launched_at, launch_error, worktree_path, worktree_branch, ask, requester, reference, timeline"
+)
+_ITEM_COLS_V13 = _ITEM_COLS_V12 + ", done_reason, checked_at, reopened_at"
+
+
+def _items_v13(statuses: str) -> str:
+    """The items table as of v13, with the given status CHECK list. v13 and v14 differ only in the statuses."""
+    return f"""
+            CREATE TABLE items_new (
+                id INTEGER PRIMARY KEY,
+                lead TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN ('reply','pr','decision','fyi','task')),
+                title TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                original_body TEXT,
+                action TEXT,
+                priority INTEGER NOT NULL DEFAULT 1 CHECK (priority BETWEEN 0 AND 2),
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
+                    {statuses})),
+                feedback TEXT,
+                url TEXT,
+                route_id INTEGER REFERENCES routes(id),
+                created_by_run_id INTEGER REFERENCES runs(id),
+                exec_run_id INTEGER REFERENCES runs(id),
+                exec_error TEXT,
+                created_at TEXT NOT NULL DEFAULT {NOW},
+                updated_at TEXT NOT NULL DEFAULT {NOW},
+                decided_at TEXT,
+                executed_at TEXT,
+                rationale TEXT,
+                summary TEXT,
+                sessions_checked_at TEXT,
+                workstream_id INTEGER REFERENCES workstreams(id),
+                goal_id INTEGER REFERENCES ws_goals(id),
+                filed_by TEXT,
+                prompt TEXT,
+                original_prompt TEXT,
+                workdir TEXT,
+                launched_at TEXT,
+                launch_error TEXT,
+                worktree_path TEXT,
+                worktree_branch TEXT,
+                ask TEXT,
+                requester TEXT,
+                reference TEXT,
+                timeline TEXT,
+                done_reason TEXT,
+                checked_at TEXT,
+                reopened_at TEXT
+            )"""
 
 
 @dataclass(frozen=True)
@@ -427,6 +482,47 @@ MIGRATIONS: tuple[Migration, ...] = (
             "ALTER TABLE items ADD COLUMN requester TEXT",
             "ALTER TABLE items ADD COLUMN reference TEXT",
             "ALTER TABLE items ADD COLUMN timeline TEXT",
+        ),
+    ),
+    # SQLite can't alter a CHECK constraint, so items is rebuilt to allow likely_done: a lead re-read the source
+    # and thinks the work is finished; it waits for me to confirm. done_reason is the lead's evidence, checked_at
+    # when a lead last re-read the item's source, reopened_at when I last said it isn't done.
+    Migration(
+        13,
+        "leads mark items they find already finished as likely done",
+        (
+            _items_v13("'pending','likely_done','approved','rejected','changes_requested','executing','done',"
+                       "'failed','dismissed'"),
+            f"INSERT INTO items_new ({_ITEM_COLS_V12}) SELECT {_ITEM_COLS_V12} FROM items",
+            "DROP TABLE items",
+            "ALTER TABLE items_new RENAME TO items",
+            "CREATE INDEX items_queue ON items(status, priority, created_at)",
+            "CREATE INDEX items_by_workstream ON items(workstream_id, status)",
+        ),
+        foreign_keys_off=True,
+    ),
+    # Rebuilt again for expired: an item I never acted on within config.EXPIRE_AFTER_DAYS. Not a decision of mine,
+    # but the daily brain and chief read it as a sign the item wasn't worth raising.
+    Migration(
+        14,
+        "items I never act on expire",
+        (
+            _items_v13("'pending','likely_done','approved','rejected','changes_requested','executing','done',"
+                       "'failed','dismissed','expired'"),
+            f"INSERT INTO items_new ({_ITEM_COLS_V13}) SELECT {_ITEM_COLS_V13} FROM items",
+            "DROP TABLE items",
+            "ALTER TABLE items_new RENAME TO items",
+            "CREATE INDEX items_queue ON items(status, priority, created_at)",
+            "CREATE INDEX items_by_workstream ON items(workstream_id, status)",
+        ),
+        foreign_keys_off=True,
+    ),
+    Migration(
+        15,
+        "when a lead marked an item likely done, so it closes on its own if I never answer",
+        (
+            "ALTER TABLE items ADD COLUMN likely_done_at TEXT",
+            "UPDATE items SET likely_done_at = updated_at WHERE status = 'likely_done'",
         ),
     ),
 )

@@ -80,8 +80,8 @@ def cmd_intern(args):
 
 def cmd_lead(args):
     from chief import lead
-    if args.refresh_summaries:
-        lead.refresh_summaries(db.open_db(), args.name, dry_run=args.dry_run)
+    if args.review:
+        lead.review_open(db.open_db(), args.name, force=True, dry_run=args.dry_run)
     else:
         lead.run(db.open_db(), args.name, dry_run=args.dry_run)
 
@@ -135,7 +135,7 @@ def cmd_ws(args):
         for s_ in d["sources"]:
             print(f"  [{s_['id']}] {s_['status']:<8} {s_['kind']:<16} {s_['label'] or s_['ref']}  {s_['why'] or ''}")
         print("\nopen items:")
-        for row in store.queue(conn, ("pending", "changes_requested", "approved", "failed"), workstream_id=w["id"]):
+        for row in store.queue(conn, workstream_id=w["id"]):
             print("  " + _fmt_item(row))
         from chief.ws_sessions import links_for
         print("\nClaude chats:")
@@ -212,12 +212,21 @@ def cmd_status(args):
 
 def cmd_queue(args):
     conn = db.open_db()
-    statuses = tuple(store.TRANSITIONS) if args.all else ("pending", "changes_requested", "approved", "failed")
+    statuses = tuple(store.TRANSITIONS) if args.all else store.OPEN_STATUSES
     rows = store.queue(conn, statuses)
     if not rows:
         print("queue is empty")
     for row in rows:
         print(_fmt_item(row))
+
+
+def cmd_expire(args):
+    from chief import config
+    rows = store.expire_stale(db.open_db(), dry_run=args.dry_run)
+    print(f"{len(rows)} items untouched for {config.EXPIRE_AFTER_DAYS} days" + (" (dry run)" if args.dry_run else ""))
+    for r in rows:
+        what = "expire" if r["status"] == "pending" else "close as done"
+        print(f"  #{r['id']:<4} {what:<13} {r['lead']:<12} {r['kind']:<9} {r['title']}")
 
 
 def cmd_show(args):
@@ -352,6 +361,8 @@ def main(argv=None):
         ("reject", "rejected", "reject an item"),
         ("changes", "changes_requested", "send an item back to its lead with a note"),
         ("dismiss", "dismissed", "drop an item without judging it"),
+        ("close", "done", "confirm a likely-done item is finished"),
+        ("reopen", "pending", "say a likely-done item isn't finished; its lead keeps it open"),
     ):
         d = sub.add_parser(name, help=help_)
         d.add_argument("id", type=int)
@@ -360,6 +371,11 @@ def main(argv=None):
             d.add_argument("--body", help="edit the body before approving")
             d.add_argument("--body-file")
         d.set_defaults(fn=_decide(status))
+
+    ex = sub.add_parser("expire", help="expire waiting items and close likely-done ones you haven't touched in a "
+                                       "while (the tick does this)")
+    ex.add_argument("--dry-run", action="store_true", help="list what would expire; change nothing")
+    ex.set_defaults(fn=cmd_expire)
 
     sv = sub.add_parser("serve", help="run the local queue web app")
     sv.add_argument("--port", type=int, default=8787)
@@ -426,8 +442,9 @@ def main(argv=None):
     lj = sub.add_parser("lead", help="run one lead (read-only; proposes queue items)")
     lj.add_argument("name", choices=sorted(LEADS))
     lj.add_argument("--dry-run", action="store_true", help=dry)
-    lj.add_argument("--refresh-summaries", action="store_true",
-                    help="re-read sources and rewrite only the 'what's pending' summary of open items")
+    lj.add_argument("--review", action="store_true",
+                    help="re-read the sources of the stalest waiting items now: mark finished ones likely done and "
+                         "refresh their summaries")
     lj.set_defaults(fn=cmd_lead)
     ss = sub.add_parser("sessions", help="index Claude Code sessions and link them to queue items")
     sssub = ss.add_subparsers(dest="scmd", required=True)

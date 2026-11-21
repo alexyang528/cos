@@ -162,7 +162,9 @@ def _reads(*surfaces: str) -> list[str]:
 
 
 def _work_deny() -> list[str]:
-    return sorted(set(GLOBAL_DENY) | set(ALL_ACTION_WRITES) | {"Edit", "Write", "NotebookEdit"})
+    # No subagents: a background one ends the session on a later turn, so the final message is prose instead of
+    # the JSON answer and num_turns no longer shows whether the pass read anything.
+    return sorted(set(GLOBAL_DENY) | set(ALL_ACTION_WRITES) | {"Edit", "Write", "NotebookEdit", "Agent", "Task"})
 
 
 def pass_spec(pass_name: str, lead: str | None = None, action: str | None = None) -> PassSpec:

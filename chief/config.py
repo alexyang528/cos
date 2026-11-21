@@ -52,6 +52,17 @@ GITHUB_LOOKBACK_DAYS = 14
 INTERN_BATCH = 40
 LEAD_BATCH = 15
 
+# Each lead re-reads the source of its waiting items to find ones already finished (they become likely_done, for me
+# to confirm). An item is re-read at most once per REVIEW_EVERY_H, and one review run takes at most REVIEW_BATCH.
+REVIEW_EVERY_H = 8
+REVIEW_BATCH = 10
+
+# A waiting item I haven't touched in this many days (no decision, launch, note, or work in a linked Claude session)
+# expires; the brain and the chief read that as a sign it wasn't worth raising. A likely-done item closes as done
+# this long after the lead marked it, unless I answer. The pane warns in the last few days.
+EXPIRE_AFTER_DAYS = 14
+EXPIRE_WARN_DAYS = 3
+
 # Linking Claude Code sessions to queue items: only sessions active this recently are candidates, and one
 # linking pass sees at most this many (most recent first).
 SESSION_LOOKBACK_DAYS = 30

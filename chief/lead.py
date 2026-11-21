@@ -83,6 +83,46 @@ def framing_rules() -> str:
   tone. Facts only, no recommendation. Take times from the source (Slack ts, comment and email dates)."""
 
 
+def done_rules() -> str:
+    """When a lead may say an open item is probably finished. Shared by the surface leads and the workstream leads."""
+    me = config.ME_NAME
+    return f"""Closing out items: an open item can be finished without {me} clicking anything in this queue. It is
+"likely_done" when the source shows the ask was met: {me} answered or acted in the thread, someone else answered
+or did it, the PR merged or closed or {me} already submitted the review, the plan moved past the phase that
+needed {me}, the ticket or issue closed, the meeting follow-up shows up as done elsewhere, or the asker said it
+isn't needed any more. A Claude Code session {me} ran on it counts when its digest shows the work finished (a
+PR opened, a doc written), not just started.
+- Mark it only on concrete evidence in the source that is newer than the last ask. Silence, time passing or a
+  promise to do it later are not evidence. When unsure, keep it open: a wrong close hides work from {me}.
+- "evidence": one or two sentences: who did what, when, and where ("{config.ME_FIRST} replied in the thread at
+  14:02 with the CSV; Priya thanked them"). {me} reads this to confirm the close.
+- An item {me} reopened (reopened_at set) stays open unless something happened after reopened_at.
+- An item already likely_done goes back to "open" when something new needs {me} (a follow-up question, the
+  PR got new review comments, the fix didn't work)."""
+
+
+def status_changes(conn: sqlite3.Connection, changes, allowed: set[int]) -> tuple[list[int], list[int], list[str]]:
+    """Apply a lead's likely_done / open verdicts to its own open items. Returns (closed, reopened, problems)."""
+    closed, reopened, problems = [], [], []
+    for c in changes or []:
+        item_id, state = (c or {}).get("item_id"), (c or {}).get("state")
+        if item_id not in allowed:
+            problems.append(f"status change for #{item_id}: not one of this lead's open items")
+            continue
+        if state == "likely_done":
+            evidence = str(c.get("evidence") or "").strip()
+            if not evidence:
+                problems.append(f"#{item_id}: likely_done needs evidence")
+            elif store.mark_likely_done(conn, item_id, evidence):
+                closed.append(item_id)
+        elif state == "open":
+            if store.lead_reopen(conn, item_id):
+                reopened.append(item_id)
+        else:
+            problems.append(f"#{item_id}: bad state {state!r}")
+    return closed, reopened, problems
+
+
 def _clean_time(value) -> str | None:
     from datetime import datetime
     try:
@@ -169,9 +209,10 @@ def build_prompt(conn, name, routes, revs) -> str:
         for i in revs
     ) or "(none)"
     actions = sorted(LEAD_ACTIONS[name])
-    open_items = [{"item_id": r["id"], "kind": r["kind"], "title": r["title"]} for r in conn.execute(
-        "SELECT id, kind, title FROM items WHERE lead = ? AND status IN ('pending','changes_requested','approved','failed') "
-        "ORDER BY id", (name,))]
+    open_items = [{"item_id": r["id"], "kind": r["kind"], "status": r["status"], "title": r["title"], "url": r["url"],
+                   "reopened_at": r["reopened_at"]} for r in conn.execute(
+        f"SELECT id, kind, status, title, url, reopened_at FROM items WHERE lead = ? AND status IN "
+        f"({','.join('?' * len(store.OPEN_STATUSES))}) ORDER BY id", (name, *store.OPEN_STATUSES))]
     elsewhere = store.pool_items(conn, exclude_lead=name)
     return f"""{prompts.SAFETY}
 You are the {name} lead. Your charter:
@@ -226,6 +267,10 @@ Item rules:
 - Your open items are listed below, and so are open items filed by other leads and workstreams. Don't queue
   a duplicate of either; if a route only repeats one, drop it and name the item in the reason. One meeting or
   thread can still give several distinct items, so match on what needs doing, not on the link.
+- When an inbox route shows that one of your open items (status pending) is now finished, or that one marked
+  likely_done needs {me} again, say so in "status_changes" (rules below). Only for your own items.
+
+{done_rules()}
 
 {framing_rules()}
 
@@ -244,10 +289,11 @@ Output schema:
    "prompt": "null to keep, \"\" to remove, or the new prompt", "workdir": "null to keep, or a workdir",
    "close": "true only to close the item because the note says it isn't needed", "why": "what changed"}}],
  "dropped": [{{"route_id": 2, "reason": "..."}}],
+ "status_changes": [{{"item_id": 5, "state": "likely_done" | "open", "evidence": "..."}}],
  "rules": [{{"text": "an instruction to your future self", "why": "the note or evidence it comes from"}}]}}
 
-"rules" is optional and usually empty: add one only when a note from {me} or a source taught you something
-durable (at most 3). They start provisional and expire in 7 days unless confirmed.
+"status_changes" is usually empty. "rules" is optional and usually empty: add one only when a note from {me} or
+a source taught you something durable (at most 3). They start provisional and expire in 7 days unless confirmed.
 
 Your open items:
 {prompts.untrusted("open-items", open_items) if open_items else "(none)"}
@@ -286,34 +332,59 @@ def pick_url(lead: str, proposed, scanned):
     return scanned
 
 
-def refresh_summaries(conn: sqlite3.Connection, name: str, *, dry_run: bool = False) -> None:
-    """Re-read the source of each open item and rewrite what the pane leads with: summary, ask, requester,
-    reference and timeline. Also fills those in on items queued before they existed."""
-    items = conn.execute(
-        "SELECT i.id, i.title, i.kind, i.url, i.summary, e.payload FROM items i "
-        "LEFT JOIN routes r ON r.id = i.route_id LEFT JOIN events e ON e.id = r.event_id "
-        "WHERE i.lead = ? AND i.status IN ('pending','changes_requested','approved','failed') ORDER BY i.id",
-        (name,),
+def due_for_review(conn: sqlite3.Connection, name: str, *, force: bool = False):
+    """The lead's waiting items it hasn't re-read in a while, stalest first. Items I'm acting on (approved,
+    failed, with a lead) are left alone."""
+    gate = "" if force else (f"AND COALESCE(i.checked_at, i.created_at) <= "
+                             f"strftime('%Y-%m-%dT%H:%M:%SZ','now','-{config.REVIEW_EVERY_H} hours') ")
+    return conn.execute(
+        "SELECT i.*, e.payload FROM items i LEFT JOIN routes r ON r.id = i.route_id "
+        "LEFT JOIN events e ON e.id = r.event_id "
+        f"WHERE i.lead = ? AND i.status IN ('pending','likely_done') {gate}"
+        "ORDER BY COALESCE(i.checked_at, i.created_at), i.id LIMIT ?",
+        (name, config.REVIEW_BATCH),
     ).fetchall()
+
+
+def review_open(conn: sqlite3.Connection, name: str, *, force: bool = False, dry_run: bool = False) -> None:
+    """Re-read the source of the lead's open items: mark the ones already finished likely_done (or reopen
+    likely_done ones something new came in on), and rewrite what the pane leads with: summary, ask, requester,
+    reference and timeline."""
+    items = due_for_review(conn, name, force=force)
     if not items:
-        print(f"summaries {name}: no open items (no model call)")
+        print(f"review {name}: no items due (no model call)")
         return
     me = config.ME_NAME
-    work = [{"item_id": i["id"], "title": i["title"], "kind": i["kind"], "url": i["url"],
+    from .sessions import links_for
+    linked = links_for(conn, [i["id"] for i in items])
+    work = [{"item_id": i["id"], "status": i["status"], "kind": i["kind"], "title": i["title"], "ask": i["ask"],
+             "url": i["url"], "created_at": i["created_at"], "summary": i["summary"], "body": (i["body"] or "")[:1500],
+             "likely_done_because": i["done_reason"], "reopened_at": i["reopened_at"],
+             "claude_sessions": [{"title": x["title"], "digest": x["digest"]} for x in linked.get(i["id"], [])
+                                 if x["digest"]],
              "source_event": json.loads(i["payload"]) if i["payload"] else None} for i in items]
     prompt = f"""{prompts.SAFETY}
-You are the {name} lead. For each open queue item below, re-read its source now (your charter says how)
-and rewrite what {me} sees first. summary: 1 to 4 short lines, each starting with "- ": where the discussion
-stands now and exactly what is pending on {me}. Facts only, newest state first, no recommendation. If the
-conversation has moved on and nothing is pending on {me} any more, say so in the first line and in the timeline.
+You are the {name} lead. These are open items you queued for {me} earlier. For each one, re-read its source now
+(your charter says how; load the tool with ToolSearch first) and decide whether it is still open or likely done.
+Read the whole conversation as it stands today, not the source event: that is what the item was filed from,
+and the thread may have moved on. Where an item links Claude Code sessions, Read the digest when its title
+suggests it covers the work.
+
+{done_rules()}
+
+Then rewrite what {me} sees first. summary: 1 to 4 short lines, each starting with "- ": where the discussion
+stands now and exactly what is pending on {me} (for a likely_done item: what finished it). Facts only, newest
+state first, no recommendation.
 
 {framing_rules()}
 
 Your charter:
 {charter(name)}
 
-Output schema: {{"summaries": [{{"item_id": 1, "summary": "- ...", "ask": "...", "requester": "... or null",
-  "reference": "... or null", "timeline": [{{"at": "...", "until": null, "text": "..."}}]}}]}}
+Output schema: {{"items": [{{"item_id": 1, "state": "open" | "likely_done", "evidence": "required for likely_done",
+  "summary": "- ...", "ask": "...", "requester": "... or null", "reference": "... or null",
+  "timeline": [{{"at": "...", "until": null, "text": "..."}}]}}]}}
+Every item below must appear once.
 
 Items:
 {prompts.untrusted(name, work)}
@@ -322,21 +393,33 @@ Items:
     if dry_run:
         print(preview(spec, prompt))
         return
-    result = run_agent(conn, spec, prompt, job="lead", lead=name)
+    result = run_agent(conn, spec, prompt, job="lead", lead=f"review:{name}")
     if not result.ok:
-        print(f"summaries {name} failed (run {result.run_id}, ${result.cost_usd:.3f}): {result.error}")
+        print(f"review {name} failed (run {result.run_id}, ${result.cost_usd:.3f}): {result.error}")
         return
     ids = {i["id"] for i in items}
-    done = []
-    for s in result.data.get("summaries") or []:
-        if s.get("item_id") in ids and s.get("summary"):
+    out = [s for s in result.data.get("items") or [] if isinstance(s, dict) and s.get("item_id") in ids]
+    refreshed = []
+    for s in out:
+        if s.get("summary"):
             f = framing(s)
             conn.execute("UPDATE items SET summary = ?, ask = COALESCE(?, ask), requester = COALESCE(?, requester), "
                          "reference = COALESCE(?, reference), timeline = COALESCE(?, timeline) WHERE id = ?",
                          (fix_notion_links(str(s["summary"])[:1200]), fix_notion_links(f["ask"]), f["requester"],
                           f["reference"], fix_notion_links(f["timeline"]), s["item_id"]))
-            done.append(s["item_id"])
-    print(f"summaries {name}: refreshed {done} of {sorted(ids)} (run {result.run_id}, ${result.cost_usd:.3f})")
+            refreshed.append(s["item_id"])
+    if result.turns < 2:
+        # A verdict without re-reading the source is a guess; keep the items as they are.
+        closed, reopened, problems = [], [], ["answered without calling any tool; status changes ignored"]
+    else:
+        closed, reopened, problems = status_changes(conn, out, ids)
+    # Every item in the batch counts as checked, so one the lead skipped doesn't hold the next batch back.
+    conn.execute(f"UPDATE items SET checked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') "
+                 f"WHERE id IN ({','.join('?' * len(ids))})", tuple(ids))
+    print(f"review {name}: {len(items)} items re-read, likely done {closed}, reopened {reopened}, "
+          f"refreshed {len(refreshed)} (run {result.run_id}, ${result.cost_usd:.3f})")
+    for p in problems:
+        print(f"  rejected: {p}")
 
 
 def check_action(name: str, action) -> str | None:
@@ -423,6 +506,7 @@ def run(conn: sqlite3.Connection, name: str, *, dry_run: bool = False) -> None:
         conn.execute("UPDATE runs SET status = 'error', error = ? WHERE id = ?", (err, result.run_id))
         print(f"lead {name}: {err} (run {result.run_id}, ${result.cost_usd:.3f})")
         result.data["items"], result.data["dropped"], result.data["rules"] = [], [], []
+        result.data["status_changes"] = []
 
     route_ids = {r["route_id"]: r for r in routes}
     covered: dict[int, str] = {}
@@ -477,6 +561,11 @@ def run(conn: sqlite3.Connection, name: str, *, dry_run: bool = False) -> None:
             else:
                 revised += 1
 
+    own = {r[0] for r in conn.execute("SELECT id FROM items WHERE lead = ? AND status IN ('pending','likely_done')",
+                                      (name,))} - set(created)
+    closed, reopened, bad = status_changes(conn, result.data.get("status_changes"), own)
+    problems += bad
+
     from .memory import lead_rules
     new_rules = lead_rules(conn, name, result.data.get("rules") or [], result.run_id)
 
@@ -484,6 +573,7 @@ def run(conn: sqlite3.Connection, name: str, *, dry_run: bool = False) -> None:
     print(f"lead {name}: {len(created)} items queued {created}, {revised} revised, "
           f"{sum(v.startswith('dropped') for v in covered.values())} dropped"
           + (f", {left} routes left for next run" if left else "")
+          + (f", likely done {closed}" if closed else "") + (f", reopened {reopened}" if reopened else "")
           + (f", provisional rules {new_rules}" if new_rules else "")
           + f" (run {result.run_id}, ${result.cost_usd:.3f})")
     for p in problems:

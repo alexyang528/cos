@@ -75,7 +75,7 @@ def decisions_since(conn: sqlite3.Connection, since: str):
     # approvals are kept too (as "this was fine").
     return conn.execute(
         "SELECT * FROM items WHERE decided_at > ? AND status IN "
-        "('approved','executing','done','failed','rejected','changes_requested','dismissed','pending') "
+        "('approved','executing','done','failed','rejected','changes_requested','dismissed','pending','expired') "
         "AND decided_at IS NOT NULL ORDER BY decided_at LIMIT 60",
         (since,),
     ).fetchall()
@@ -87,12 +87,14 @@ def build_brain_prompt(current: str, rows) -> str:
     for r in rows:
         decisions.append({
             "item_id": r["id"], "lead": r["lead"], "kind": r["kind"], "title": r["title"],
-            "outcome": r["status"], "my_note": r["feedback"],
+            "outcome": r["status"], "my_note": r["feedback"], "requester": r["requester"],
             "agent_draft": r["original_body"] if r["original_body"] is not None else r["body"],
             "my_edited_version": r["body"] if r["original_body"] is not None else None,
             "agent_prompt": r["original_prompt"] if r["original_prompt"] is not None else r["prompt"],
             "my_edited_prompt": r["prompt"] if r["original_prompt"] is not None else None,
             "launched_session": r["launched_at"] is not None,
+            "lead_found_done": r["done_reason"] if r["status"] == "done" else None,
+            "reopened_after_lead_said_done": r["reopened_at"] is not None,
         })
     return f"""{prompts.SAFETY}
 You maintain {me}'s preferences file. Every lead and the intern read it before working. Update it from {me}'s
@@ -102,6 +104,13 @@ recent queue decisions below. What each outcome means:
 - dismissed ("Not useful" / "Not needed" / "Not mine"): not worth {me}'s attention; surface fewer like it.
 - rejected: the recommendation was wrong.
 - changes_requested: my_note says what was wrong or what {me} wanted instead.
+- lead_found_done: the lead re-read the source, found the work already finished (its evidence), and {me}
+  confirmed. Says nothing about whether the item was worth surfacing.
+- reopened_after_lead_said_done: a lead called it finished and {me} said it wasn't: the lead closed too eagerly.
+- expired: {me} never touched it in {config.EXPIRE_AFTER_DAYS} days (no click, no note, no session), so it
+  closed on its own. Likely not relevant or not worth raising, but one expiry is weak evidence ({me} may just
+  have been busy). Look for what expired items share (lead, kind, source, channel, requester, topic) and write
+  that as a "surface fewer like this" preference once several agree.
 - launched_session: {me} started a Claude Code session from the item's agent prompt. agent_prompt is what the
   lead drafted; my_edited_prompt is what {me} actually ran, if they changed it. An item with a prompt that
   {me} closed without launching suggests the prompt wasn't needed; one {me} launched after writing their own

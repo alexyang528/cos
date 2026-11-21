@@ -14,8 +14,8 @@ from pathlib import Path
 from . import config, paths, prompts
 from .policy import pass_spec
 from .runner import preview, run_agent
+from .store import OPEN_STATUSES
 
-OPEN_STATUSES = ("pending", "changes_requested", "approved", "failed")
 # A session still in use is left alone until it has been quiet this long, so one burst of work is judged
 # once instead of on every tick.
 SETTLE_MIN = 20

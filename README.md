@@ -3,7 +3,10 @@
 A personal chief of staff built on Claude Code. Every working hour it scans Slack, Gmail, Notion, Granola,
 Switchboard and GitHub for things that need you. An intern triages them, and a lead per source researches each one
 and files it in a local queue. Each item has the context and links you need, and often a ready-to-launch agent
-prompt. Nothing is ever sent on your behalf; acting on an item is always your click.
+prompt. Leads also re-read what is already queued: an item whose source shows it was finished (you answered,
+the PR merged, someone else handled it) becomes Probably done, with the evidence, for you to confirm (it closes
+as done if you never answer). An item you don't touch for two weeks expires, and the daily chief of staff learns
+from what expires. Nothing is ever sent on your behalf; acting on an item is always your click.
 
 It runs on your Mac, uses your own Claude Code login and claude.ai connectors, and keeps everything it reads in
 `data/`, which never leaves your machine.

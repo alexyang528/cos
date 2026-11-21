@@ -81,6 +81,11 @@ def tick(conn, *, force: bool = False) -> None:
         expired = memory.expire_rules(conn)
         if expired:
             print(f"rules: {expired} provisional rules expired")
+        stale = store.expire_stale(conn)
+        if stale:
+            print(f"items untouched for {config.EXPIRE_AFTER_DAYS} days: expired "
+                  f"{[r['id'] for r in stale if r['status'] == 'pending']}, closed as done "
+                  f"{[r['id'] for r in stale if r['status'] == 'likely_done']}")
         scanners = {"slack": scan_slack, "switchboard": scan_switchboard, "granola": scan_granola, "notion": scan_notion,
                     "email": scan_email, "github": scan_github}
         for surface in config.SCAN_SURFACES:
@@ -99,6 +104,10 @@ def tick(conn, *, force: bool = False) -> None:
             return
         for w in workstreams.active(conn):
             if not _step(f"workstream {w['slug']}", lambda w=w: ws_lead.run(conn, w)):
+                return
+        # Closing out finished items comes last: it only tidies the queue, so it gets whatever budget is left.
+        for name in config.ENABLED_LEADS:
+            if not _step(f"review {name}", lambda n=name: lead.review_open(conn, n)):
                 return
 
 

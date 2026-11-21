@@ -17,7 +17,7 @@ from . import config, prompts, store
 from . import workstreams as ws
 from . import ws_sessions
 from .lead import (ACTION_FORMATS, INSTRUCTION_ONLY_ACTIONS, apply_revision, charter, check_action, clean_prompt,
-                   clean_workdir, framing, framing_rules, memory_block, prompt_rules)
+                   clean_workdir, done_rules, framing, framing_rules, memory_block, prompt_rules, status_changes)
 from .leads import ws_agent
 from .memory import lead_rules
 from .policy import LEAD_ACTIONS, pass_spec
@@ -130,7 +130,7 @@ def build_prompt(conn, w, reasons, routes, revs, instrs, acts) -> str:
     updates = [{"at": u["occurred_at"] or u["created_at"], "text": u["text"], "url": u["url"]} for u in conn.execute(
         "SELECT * FROM ws_updates WHERE workstream_id = ? ORDER BY id DESC LIMIT 15", (w["id"],))]
     open_items = [{"item_id": i["id"], "kind": i["kind"], "status": i["status"], "title": i["title"],
-                   "summary": i["summary"]}
+                   "summary": i["summary"], "url": i["url"], "reopened_at": i["reopened_at"]}
                   for i in store.queue(conn, ws.OPEN_ITEM_STATUSES, workstream_id=w["id"])]
     work = [{"route_id": r["route_id"], "intern_summary": r["summary"], "kind": r["kind"], "url": r["url"],
              "author": r["author"], "at": r["occurred_at"], "event": json.loads(r["payload"])} for r in routes]
@@ -210,6 +210,10 @@ What {me} has taught the system so far:
    in any status. Never propose a removed or rejected one again.
 5. "charter": {"your draft (first run)" if first else "null, unless an instruction asks you to change it"}.
 6. "instruction_replies": for each instruction, one or two sentences on what you did, or why you couldn't.
+7. "status_changes": open items in this workstream (status pending) that the activity, inbox or sessions show
+   are already finished, and likely_done ones that need {me} again. Rules below; usually empty.
+
+{done_rules()}
 
 Instructions from {me} (trusted; do what each asks within what you can output):
 {instr_block}
@@ -257,6 +261,7 @@ Output schema:
    "url": "https://...", "why": "..."}}],
  "charter": null,
  "instruction_replies": [{{"instruction_id": 1, "reply": "..."}}],
+ "status_changes": [{{"item_id": 5, "state": "likely_done" | "open", "evidence": "..."}}],
  "rules": [{{"text": "an instruction to your future self", "why": "the note or evidence it comes from"}}]}}
 "rules" is optional and usually empty (at most 3; they start provisional).
 
@@ -327,7 +332,7 @@ def run(conn: sqlite3.Connection, w, *, reasons: list[str] | None = None, dry_ru
         err = "lead answered without calling any tool; new items discarded, routes left in the inbox"
         conn.execute("UPDATE runs SET status = 'error', error = ? WHERE id = ?", (err, result.run_id))
         print(f"{label}: {err} (run {result.run_id}, ${result.cost_usd:.3f})")
-        data["items"], data["dropped"] = [], []
+        data["items"], data["dropped"], data["status_changes"] = [], [], []
     apply(conn, w, result.run_id, data, routes, revs, instrs, acts, reasons, cost=result.cost_usd)
 
 
@@ -462,11 +467,17 @@ def apply(conn, w, run_id: int, data: dict, routes, revs, instrs, acts, reasons,
         conn.execute(f"UPDATE ws_activity SET processed_run_id = ? WHERE id IN ({','.join('?' * len(acts))})",
                      (run_id, *[a["id"] for a in acts]))
 
+    own = {r[0] for r in conn.execute("SELECT id FROM items WHERE workstream_id = ? AND status IN "
+                                      "('pending','likely_done')", (w["id"],))} - set(created) - set(adopted)
+    closed, reopened, bad = status_changes(conn, data.get("status_changes"), own)
+    problems += bad
+
     new_rules = lead_rules(conn, ws_agent(w["slug"]), data.get("rules") or [], run_id)
     left = len(route_ids) - len(covered)
     print(f"workstream {w['slug']}: {len(created)} items {created}, {len(adopted)} adopted {adopted}, {revised} revised, {updates} updates, "
           f"sources proposed {proposed_sources}"
           + (f", {left} routes left for next run" if left else "")
+          + (f", likely done {closed}" if closed else "") + (f", reopened {reopened}" if reopened else "")
           + (f", provisional rules {new_rules}" if new_rules else "")
           + f" (run {run_id}, ${cost:.3f})")
     for p in problems:

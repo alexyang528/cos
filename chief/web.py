@@ -27,7 +27,7 @@ FONTS = {"/fonts/inter.woff2": "Inter-Variable-latin.woff2", "/fonts/reddit-mono
 LOGOS = {"/logos/slack.png": "slack.png", "/logos/granola.png": "granola.png", "/logos/switchboard.png": "switchboard.png",
          "/logos/notion.png": "notion.png", "/logos/gmail.png": "gmail.png", "/logos/github.png": "github.png"}
 APP_ICON = re.compile(r"^/app-icons/([a-z]+)\.png$")
-OPEN_STATUSES = ("pending", "changes_requested", "approved", "failed", "executing")
+OPEN_STATUSES = (*store.OPEN_STATUSES, "executing")
 DECISIONS = {
     "approve": "approved",
     "reject": "rejected",
@@ -35,6 +35,8 @@ DECISIONS = {
     "dismiss": "dismissed",
     "unapprove": "pending",
     "retry": "approved",
+    "close": "done",
+    "reopen": "pending",
 }
 ITEM_PATH = re.compile(r"^/api/items/(\d+)/([a-z]+)$")
 RULE_PATH = re.compile(r"^/api/rules/(\d+)/(confirm|retire)$")
@@ -87,6 +89,22 @@ def send_in_background(item_id: int) -> None:
     threading.Thread(target=work, daemon=True).start()
 
 
+def by_review_order(items: list[dict]) -> list[dict]:
+    """Items a lead thinks are finished go after everything that still needs me."""
+    return sorted(items, key=lambda i: i["status"] == "likely_done")
+
+
+def add_expiry(conn, items: list[dict]) -> None:
+    """expires_at on each waiting or likely-done item, only once it is within EXPIRE_WARN_DAYS, so the page can
+    count down."""
+    from datetime import datetime, timedelta, timezone
+    warn_from = (datetime.now(timezone.utc) + timedelta(days=config.EXPIRE_WARN_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    dates = store.expiry_dates(conn, [i["id"] for i in items])
+    for i in items:
+        e = dates.get(i["id"])
+        i["expires_at"] = e if e and e <= warn_from else None
+
+
 def item_json(row) -> dict:
     d = dict(row)
     d["action"] = json.loads(d["action"]) if d["action"] else None
@@ -129,16 +147,17 @@ def add_source_labels(conn, items: list[dict]) -> None:
 def snapshot(conn, include_recent: bool) -> dict:
     from .sessions import links_for
     from . import launch, workstreams
-    items = [item_json(r) for r in store.queue(conn, OPEN_STATUSES)]
+    items = by_review_order([item_json(r) for r in store.queue(conn, OPEN_STATUSES)])
     recent = []
     if include_recent:
         recent = [item_json(r) for r in conn.execute(
-            "SELECT * FROM items WHERE status IN ('done','rejected','dismissed') "
+            "SELECT * FROM items WHERE status IN ('done','rejected','dismissed','expired') "
             "ORDER BY COALESCE(executed_at, decided_at, updated_at) DESC LIMIT 30"
         )]
     links = links_for(conn, [i["id"] for i in items + recent])
     for i in items + recent:
         i["sessions"] = links.get(i["id"], [])
+    add_expiry(conn, items)
     add_source_labels(conn, items + recent)
     today = conn.execute(
         "SELECT ROUND(COALESCE(SUM(cost_usd),0),2) c, COUNT(*) n, SUM(status='error') e FROM runs "
@@ -158,6 +177,7 @@ def snapshot(conn, include_recent: bool) -> dict:
         "default_workdir": config.DEFAULT_WORKDIR,
         "worktree_by_default": sorted(config.WORKTREE_BY_DEFAULT),
         "launcher": config.LAUNCHER,
+        "expire_after_days": config.EXPIRE_AFTER_DAYS,
         "launcher_label": config.LAUNCHERS[config.LAUNCHER],
         "resume_targets": launch.resume_targets(),
         "today": {"cost_usd": today["c"], "runs": today["n"], "errors": today["e"] or 0},
@@ -168,13 +188,14 @@ def workstream_snapshot(conn, ws_id: int) -> dict:
     from . import workstreams
     from .sessions import links_for
     d = workstreams.detail(conn, ws_id)
-    items = [item_json(r) for r in store.queue(conn, OPEN_STATUSES, workstream_id=ws_id)]
+    items = by_review_order([item_json(r) for r in store.queue(conn, OPEN_STATUSES, workstream_id=ws_id)])
     closed = [item_json(r) for r in conn.execute(
-        "SELECT * FROM items WHERE workstream_id = ? AND status IN ('done','rejected','dismissed') "
+        "SELECT * FROM items WHERE workstream_id = ? AND status IN ('done','rejected','dismissed','expired') "
         "ORDER BY COALESCE(executed_at, decided_at, updated_at) DESC LIMIT 20", (ws_id,))]
     links = links_for(conn, [i["id"] for i in items + closed])
     for i in items + closed:
         i["sessions"] = links.get(i["id"], [])
+    add_expiry(conn, items)
     add_source_labels(conn, items + closed)
     from .ws_sessions import links_for as ws_links
     return {**d, "items": items, "closed": closed, "running": ws_id in RUNNING, "sessions": ws_links(conn, ws_id)}
@@ -312,6 +333,29 @@ def make_handler(token: str, port: int):
             else:
                 run_lead_in_background(item["lead"])
             return self._json(HTTPStatus.ACCEPTED, {"ok": True, "status": "with lead"})
+
+        def _close_likely_done(self):
+            """Close the likely-done items I was looking at. Only those ids, and only while still likely_done, so an
+            item a lead reopened since the page loaded stays open."""
+            try:
+                ids = self._payload().get("ids")
+            except ValueError as e:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+            if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": "ids must be a list of item ids"})
+            conn = db.open_db()
+            closed = []
+            try:
+                for item_id in ids:
+                    try:
+                        if store.get_item(conn, item_id)["status"] == "likely_done":
+                            store.transition(conn, item_id, "done")
+                            closed.append(item_id)
+                    except (KeyError, store.InvalidTransition):
+                        continue
+            finally:
+                conn.close()
+            return self._json(HTTPStatus.OK, {"ok": True, "closed": closed})
 
         def _payload(self) -> dict:
             length = int(self.headers.get("Content-Length") or 0)
@@ -481,6 +525,8 @@ def make_handler(token: str, port: int):
                 return
             if self.path == "/api/sessions/resume":
                 return self._resume()
+            if self.path == "/api/items/close-likely-done":
+                return self._close_likely_done()
             m = ITEM_PATH.match(self.path)
             if m and m.group(2) == "unlink":
                 return self._unlink(int(m.group(1)))

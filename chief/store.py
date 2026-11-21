@@ -2,6 +2,7 @@ import json
 import sqlite3
 from typing import Any
 
+from . import config
 from .db import transaction
 from .links import fix_notion_links
 from .leads import QUEUE_OWNERS
@@ -9,9 +10,12 @@ from .policy import ACTION_WRITE_TOOLS, DECISION_ACTIONS
 
 NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%SZ','now')"
 
-# The queue state machine. Only `execute` moves items out of approved/executing.
+# The queue state machine. Only `execute` moves items out of approved/executing. A lead moves pending <->
+# likely_done when it finds the work already finished (or not after all); only I close an item for good, except
+# that a pending item I never touch expires (expire_stale).
 TRANSITIONS: dict[str, set[str]] = {
-    "pending": {"approved", "rejected", "changes_requested", "dismissed"},
+    "pending": {"approved", "rejected", "changes_requested", "dismissed", "likely_done", "expired"},
+    "likely_done": {"done", "pending", "changes_requested", "dismissed"},
     "changes_requested": {"pending", "approved", "rejected", "dismissed"},
     "approved": {"pending", "executing"},
     "executing": {"done", "failed"},
@@ -19,7 +23,12 @@ TRANSITIONS: dict[str, set[str]] = {
     "rejected": set(),
     "done": set(),
     "dismissed": set(),
+    "expired": set(),
 }
+
+
+# Items still on my plate in some way; likely_done stays here until I confirm it.
+OPEN_STATUSES = ("pending", "likely_done", "changes_requested", "approved", "failed")
 
 
 class InvalidTransition(Exception):
@@ -118,8 +127,7 @@ def get_item(conn: sqlite3.Connection, item_id: int) -> sqlite3.Row:
     return row
 
 
-def queue(conn: sqlite3.Connection, statuses: tuple[str, ...] = ("pending", "changes_requested", "approved", "failed"),
-          *, workstream_id: int | None = None):
+def queue(conn: sqlite3.Connection, statuses: tuple[str, ...] = OPEN_STATUSES, *, workstream_id: int | None = None):
     """Items in these statuses: all of them, or one workstream's."""
     marks = ",".join("?" * len(statuses))
     where, params = f"status IN ({marks})", list(statuses)
@@ -132,7 +140,7 @@ def queue(conn: sqlite3.Connection, statuses: tuple[str, ...] = ("pending", "cha
 def pool_items(conn: sqlite3.Connection, *, exclude_lead: str | None = None, exclude_workstream: int | None = None,
                limit: int = 80) -> list[dict]:
     """Open items filed by other leads or in other workstreams, so a lead can avoid duplicating them."""
-    where, params = "i.status IN ('pending','changes_requested','approved','failed')", []
+    where, params = f"i.status IN ({','.join(repr(x) for x in OPEN_STATUSES)})", []
     if exclude_lead:
         where += " AND i.lead != ?"
         params.append(exclude_lead)
@@ -165,6 +173,9 @@ def transition(
         params: list[Any] = [new_status]
         if new_status in ("approved", "rejected", "changes_requested", "dismissed", "done"):
             sets.append(f"decided_at = {NOW_SQL}")
+        if item["status"] == "likely_done" and new_status != "done":
+            # I said it isn't done: the lead keeps it open unless something new happens after this.
+            sets += ["done_reason = NULL", f"reopened_at = {NOW_SQL}"]
         if feedback is not None:
             sets.append("feedback = ?")
             params.append(feedback)
@@ -236,7 +247,7 @@ def revise_item(conn: sqlite3.Connection, item_id: int, *, body: str, title: str
         raise InvalidTransition(f"item {item_id} is not awaiting changes")
 
 
-LAUNCHABLE = ("pending", "approved", "failed")
+LAUNCHABLE = ("pending", "likely_done", "approved", "failed")
 
 
 def record_launch(conn: sqlite3.Connection, item_id: int, *, prompt: str, workdir: str,
@@ -268,6 +279,60 @@ def record_launch(conn: sqlite3.Connection, item_id: int, *, prompt: str, workdi
                      "worktree_path = COALESCE(?, worktree_path)", "worktree_branch = COALESCE(?, worktree_branch)"]
             params += [warning, worktree_path, worktree_branch]
         conn.execute(f"UPDATE items SET {', '.join(sets)} WHERE id = ?", (*params, item_id))
+
+
+def mark_likely_done(conn: sqlite3.Connection, item_id: int, reason: str) -> bool:
+    """A lead found the work finished. Only a pending item moves; anything I'm acting on is left alone."""
+    return conn.execute(
+        f"UPDATE items SET status = 'likely_done', done_reason = ?, likely_done_at = {NOW_SQL}, updated_at = {NOW_SQL} "
+        "WHERE id = ? AND status = 'pending'", (fix_notion_links(reason)[:1200], item_id)).rowcount == 1
+
+
+def lead_reopen(conn: sqlite3.Connection, item_id: int) -> bool:
+    """A lead found the work isn't finished after all (something new came in)."""
+    return conn.execute(
+        f"UPDATE items SET status = 'pending', done_reason = NULL, updated_at = {NOW_SQL} "
+        "WHERE id = ? AND status = 'likely_done'", (item_id,)).rowcount == 1
+
+
+# When I last showed interest in an item: it arrived, I decided or launched something (decided_at), said it was
+# still open, or worked on it in a Claude session linked to it. A likely_done item's clock also restarts when the
+# lead marks it, so I get the full window to say it isn't done.
+_LAST_TOUCH = (
+    "MAX(i.created_at, COALESCE(i.decided_at, ''), COALESCE(i.reopened_at, ''), "
+    "CASE WHEN i.status = 'likely_done' THEN COALESCE(i.likely_done_at, '') ELSE '' END, "
+    "COALESCE((SELECT MAX(c.last_at) FROM item_sessions s JOIN claude_sessions c ON c.id = s.session_id "
+    "WHERE s.item_id = i.id AND s.removed_at IS NULL), ''))"
+)
+_EXPIRES = f"strftime('%Y-%m-%dT%H:%M:%SZ', {_LAST_TOUCH}, '+{config.EXPIRE_AFTER_DAYS} days')"
+
+
+def expiry_dates(conn: sqlite3.Connection, ids: list[int]) -> dict[int, str]:
+    """When each of these items closes on its own if I leave it alone: a waiting item expires, a likely_done one
+    closes as done. Nothing else has a clock."""
+    if not ids:
+        return {}
+    rows = conn.execute(f"SELECT i.id, {_EXPIRES} AS expires_at FROM items i "
+                        f"WHERE i.status IN ('pending','likely_done') AND i.id IN ({','.join('?' * len(ids))})", ids)
+    return {r["id"]: r["expires_at"] for r in rows}
+
+
+def expire_stale(conn: sqlite3.Connection, *, dry_run: bool = False) -> list[sqlite3.Row]:
+    """Close items I haven't touched in EXPIRE_AFTER_DAYS. A waiting item expires, with decided_at marking when, so
+    the brain reads it alongside my own decisions. A likely_done item closes as done; that says nothing about my
+    taste, so it gets no decided_at and the brain doesn't see it."""
+    rows = conn.execute(f"SELECT i.id, i.lead, i.kind, i.title, i.status FROM items i "
+                        f"WHERE i.status IN ('pending','likely_done') AND {_EXPIRES} <= {NOW_SQL} "
+                        "ORDER BY i.id").fetchall()
+    if not dry_run:
+        for r in rows:
+            if r["status"] == "pending":
+                conn.execute(f"UPDATE items SET status = 'expired', decided_at = {NOW_SQL}, updated_at = {NOW_SQL} "
+                             "WHERE id = ? AND status = 'pending'", (r["id"],))
+            else:
+                conn.execute(f"UPDATE items SET status = 'done', updated_at = {NOW_SQL} "
+                             "WHERE id = ? AND status = 'likely_done'", (r["id"],))
+    return rows
 
 
 def claim_for_execute(conn: sqlite3.Connection, item_id: int) -> bool:

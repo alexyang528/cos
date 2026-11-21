@@ -439,15 +439,24 @@ async function api(path, opts = {}) {
 }
 
 const STATUS = {
-  pending: ["Needs review", "yellow"], changes_requested: ["With lead", "blue"], approved: ["Approved", "green"],
+  pending: ["Needs review", "yellow"], likely_done: ["Probably done", "green"], changes_requested: ["With lead", "blue"], approved: ["Approved", "green"],
   executing: ["Sending", "blue"], done: ["Done", "green"], failed: ["Failed", "red"], rejected: ["Rejected", "red"],
-  dismissed: ["Dismissed", "gray"],
+  dismissed: ["Dismissed", "gray"], expired: ["Expired", "gray"],
 };
 const RUN_STATUS = { ok: ["OK", "green"], error: ["Error", "red"], running: ["Running", "blue"], dry_run: ["Dry run", "gray"] };
 // P0 urgent, P1 needs you, P2 FYI. Lower sorts first.
 const PRI = { 0: ["P0", "var(--red-solid)"], 1: ["P1", "var(--yellow-solid)"], 2: ["P2", "var(--gray-solid)"] };
 const badge = ([label, tone]) => el("span", { class: `badge tone-${tone}` }, label);
 const statusBadge = s => badge(STATUS[s] || [s, "gray"]);
+// Waiting and likely-done items count down once the server says they're within the warning window (expires_at is
+// null before then): a waiting item expires, a likely-done one closes as done.
+function expiryLabel(it) {
+  if (!["pending", "likely_done"].includes(it.status) || !it.expires_at) return null;
+  const days = Math.ceil((new Date(it.expires_at) - Date.now()) / 86400000);
+  const when = days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+  return it.status === "pending" ? `Expires ${when}` : `Closes as done ${when}`;
+}
+const itemBadge = it => { const e = expiryLabel(it); return e ? badge([e, it.status === "pending" ? "red" : "green"]) : statusBadge(it.status); };
 const pri = p => el("span", { class: "pri" }, el("span", { class: "dot", style: `background:${PRI[p][1]}` }), PRI[p][0]);
 const EFFECTS = {
   gmail_draft: a => `Creates a Gmail draft${a.thread_id ? " on thread " + a.thread_id : ""}. You send it yourself.`,
@@ -562,7 +571,8 @@ function pageItems() {
 
 function queueSummary(items) {
   const n = s => items.filter(i => s.includes(i.status)).length;
-  return `${n(NEEDS_REVIEW)} need review · ${n(["approved"])} approved, not sent` + (n(["failed"]) ? ` · ${n(["failed"])} failed` : "");
+  return `${n(NEEDS_REVIEW)} need review · ${n(["approved"])} approved, not sent` + (n(["failed"]) ? ` · ${n(["failed"])} failed` : "")
+    + (n(["likely_done"]) ? ` · ${n(["likely_done"])} probably done` : "");
 }
 
 function itemTable(items, { selectable }) {
@@ -581,7 +591,7 @@ function itemTable(items, { selectable }) {
           + (it.prompt && !it.launched_at ? " · agent prompt" : "")
           + (it.sessions?.length ? ` · ${it.sessions.length} Claude session${it.sessions.length > 1 ? "s" : ""}` : ""))))),
       showWs ? wsCell(it) : null,
-      el("td", {}, statusBadge(it.status)),
+      el("td", {}, itemBadge(it)),
       el("td", { class: "right muted num hide-sm" }, ago(it.executed_at || it.decided_at || it.created_at)));
     return tr;
   });
@@ -601,8 +611,12 @@ function renderQueue() {
   const items = queueItems();
   state.sel = Math.min(state.sel, Math.max(items.length - 1, 0));
   const sub = queueSummary(all);
+  const likely = items.filter(i => i.status === "likely_done");
   return [
-    pageHeader("Queue", sub, el("button", { class: "btn btn-outline btn-sm", onclick: load }, "Refresh")),
+    pageHeader("Queue", sub,
+      likely.length ? el("button", { class: "btn btn-outline btn-sm", onclick: () => closeLikelyDone(likely),
+        title: "Close every item a lead found already finished, in this tab" }, icon("check", 14), `Close ${likely.length} probably done`) : null,
+      el("button", { class: "btn btn-outline btn-sm", onclick: load }, "Refresh")),
     el("div", { class: "toolbar" },
       el("div", { class: "tabs", role: "group", "aria-label": "Source" }, tabs.map(([k, label, c]) =>
         el("button", { class: "tab", "aria-pressed": String(state.source === k), onclick: () => { state.source = k; state.sel = 0; render(); } },
@@ -617,7 +631,7 @@ function renderQueue() {
 
 function renderClosed() {
   const items = state.queue.recent || [];
-  return [pageHeader("Recently closed", "Sent, done, rejected and dismissed items, newest first"),
+  return [pageHeader("Recently closed", "Sent, done, rejected, dismissed and expired items, newest first"),
     items.length ? itemTable(items, { selectable: false }) : el("div", { class: "table-card" }, emptyState("archive", "Nothing closed yet", "Items you approve, send, reject or dismiss show up here."))];
 }
 
@@ -717,7 +731,7 @@ function renderSheet() {
   const source = url ? sourceLink(it.lead, url) : null;
   const sub = [it.requester, it.reference].filter(Boolean).join(" · ");
   // The status shows only when it isn't the usual "waiting on you", so the meta line stays quiet.
-  const status = ["pending", "changes_requested"].includes(it.status) ? null : STATUS[it.status]?.[0];
+  const status = expiryLabel(it) || (["pending", "changes_requested"].includes(it.status) ? null : STATUS[it.status]?.[0]);
 
   sheet.replaceChildren(
     el("header", { class: "pane-head" },
@@ -731,6 +745,7 @@ function renderSheet() {
       source ? el("a", { class: "btn btn-outline pane-source", href: source.href, target: "_blank", rel: "noopener noreferrer" },
         source.label, icon("external", 13)) : null),
     el("div", { class: "pane-body" },
+      doneSection(it),
       updatesSection(it),
       sessionsSection(it),
       workstreamSection(it)),
@@ -740,6 +755,13 @@ function renderSheet() {
 
 const sep = () => el("span", { "aria-hidden": "true" }, "·");
 const paneLabel = (text, tag = "h3") => el(tag, { class: "pane-label" }, text);
+
+function doneSection(it) {
+  if (it.status !== "likely_done" || !it.done_reason) return null;
+  return el("section", { class: "pane-section" }, paneLabel("Why the lead thinks it's done"),
+    el("div", {}, it.done_reason),
+    el("div", { class: "pane-hint" }, `If you don't answer, it closes as done ${state.queue.expire_after_days} days after the lead marked it.`));
+}
 
 // The lead's timeline, with a date on the first row and wherever the day changes; older items fall back to their
 // summary's lines, without times.
@@ -771,7 +793,7 @@ function timelineRows(entries) {
 }
 const hm = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
-const LAUNCHABLE = ["pending", "approved", "failed"];
+const LAUNCHABLE = ["pending", "likely_done", "approved", "failed"];
 
 function sessionsSection(it) {
   const open = LAUNCHABLE.includes(it.status);
@@ -947,7 +969,9 @@ function paneFoot(it) {
   const btn = (label, onclick, primary = false, ic = null) =>
     el("button", { class: `btn ${primary ? "btn-primary" : "btn-outline"}`, onclick }, ic ? icon(ic, 15) : null, label);
   let actions = null, note = null;
-  if (NEEDS_REVIEW.includes(it.status) && a) {
+  if (it.status === "likely_done") {
+    actions = [btn("Mark done", () => decide(it, "close"), true, "check"), btn("Still open", () => decide(it, "reopen"))];
+  } else if (NEEDS_REVIEW.includes(it.status) && a) {
     note = `Approve: ${effect}`;
     actions = [btn("Approve", () => decide(it, "approve"), true, "check"), btn("Don't track", () => decide(it, "dismiss"))];
   } else if (NEEDS_REVIEW.includes(it.status)) {
@@ -962,7 +986,7 @@ function paneFoot(it) {
     note = "Sending…";
   }
   // Free-text instructions go to the item's lead, which runs right away and revises the item.
-  const canInstruct = (state.queue.leads || []).includes(it.lead) && ["pending", "approved"].includes(it.status);
+  const canInstruct = (state.queue.leads || []).includes(it.lead) && ["pending", "likely_done", "approved"].includes(it.status);
   let ask = null;
   if (canInstruct) {
     const input = el("input", { type: "text", id: "note", class: "lead-input-field", placeholder: "Tell the lead agent what to do…", "aria-label": "Instruction for the lead agent" });
@@ -1007,11 +1031,18 @@ async function decide(it, decision) {
   try {
     const updated = await api(`/api/items/${it.id}/${decision}`, { method: "POST", body: JSON.stringify(payload) });
     delete state.notes[it.id];
-    const said = { changes_requested: "sent back to the lead",
+    const said = decision === "reopen" ? "kept open" : { changes_requested: "sent back to the lead",
                    done: "closed", dismissed: "closed as not useful" }[updated.status];
     toast(`#${it.id} ${said || STATUS[updated.status]?.[0].toLowerCase() || updated.status}`);
     // After a decision on a review item, move to the next one so the queue can be worked straight through.
     if ((state.route.page === "queue" || wsIdOf(state.route.page)) && ["rejected", "dismissed", "changes_requested", "done"].includes(updated.status)) go(state.route.page);
+    await load();
+  } catch (e) { toast(e.message); }
+}
+async function closeLikelyDone(items) {
+  try {
+    const res = await api("/api/items/close-likely-done", { method: "POST", body: JSON.stringify({ ids: items.map(i => i.id) }) });
+    toast(`Closed ${res.closed.length} item${res.closed.length === 1 ? "" : "s"}`);
     await load();
   } catch (e) { toast(e.message); }
 }
@@ -1046,7 +1077,7 @@ async function ruleAction(r, verb) {
 // ---- Workstreams ----------------------------------------------------------------------------------------
 
 const FILED_BY = { source: "a watched source", intern: "the intern's judgment", lead: "the workstream's lead", user: "you" };
-const MOVABLE = ["pending", "approved", "failed"];
+const MOVABLE = ["pending", "likely_done", "approved", "failed"];
 
 // Inputs keep what you typed across re-renders (a refresh or another click re-draws the page).
 function field(key, attrs = {}, tag = "input") {
@@ -1279,7 +1310,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "j" || e.key === "ArrowDown") { state.sel = Math.min(state.sel + 1, items.length - 1); if (state.route.id && items[state.sel]) go(page, items[state.sel].id); else render(); e.preventDefault(); }
   else if (e.key === "k" || e.key === "ArrowUp") { state.sel = Math.max(state.sel - 1, 0); if (state.route.id && items[state.sel]) go(page, items[state.sel].id); else render(); e.preventDefault(); }
   else if (e.key === "Enter" && items[state.sel]) go(page, items[state.sel].id);
-  else if (e.key === "a" && state.route.id) { const it = findItem(state.route.id); if (it && NEEDS_REVIEW.includes(it.status)) decide(it, "approve"); }
+  else if (e.key === "a" && state.route.id) { const it = findItem(state.route.id); if (it && NEEDS_REVIEW.includes(it.status)) decide(it, "approve"); else if (it?.status === "likely_done") decide(it, "close"); }
 });
 
 document.getElementById("brandMark").append(icon("spark", 15));
