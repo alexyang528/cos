@@ -264,6 +264,15 @@ def cmd_expire(args):
         print(f"  #{r['id']:<4} {what:<13} {r['lead']:<12} {r['kind']:<9} {r['title']}")
 
 
+def cmd_priority(args):
+    conn = db.open_db()
+    try:
+        store.set_priority(conn, args.id, args.priority)
+    except store.InvalidTransition as e:
+        sys.exit(str(e))
+    print(_fmt_item(store.get_item(conn, args.id)))
+
+
 def cmd_show(args):
     conn = db.open_db()
     row = store.get_item(conn, args.id)
@@ -374,6 +383,11 @@ def main(argv=None):
     q = sub.add_parser("queue", help="list the queue")
     q.add_argument("--all", action="store_true")
     q.set_defaults(fn=cmd_queue)
+
+    pr = sub.add_parser("priority", help="set an open item's priority: 0 urgent, 1 needs you, 2 fyi")
+    pr.add_argument("id", type=int)
+    pr.add_argument("priority", type=int, choices=range(3))
+    pr.set_defaults(fn=cmd_priority)
 
     s = sub.add_parser("show", help="show one item")
     s.add_argument("id", type=int)

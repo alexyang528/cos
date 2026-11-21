@@ -604,6 +604,19 @@ def make_handler(token: str, port: int):
                 return self._launch(int(m.group(1)))
             if m and m.group(2) == "instruct":
                 return self._instruct(int(m.group(1)))
+            if m and m.group(2) == "priority":
+                conn = db.open_db()
+                try:
+                    store.set_priority(conn, int(m.group(1)), self._payload().get("priority"))
+                    return self._json(HTTPStatus.OK, item_json(store.get_item(conn, int(m.group(1)))))
+                except KeyError as e:
+                    return self._json(HTTPStatus.NOT_FOUND, {"error": str(e).strip("'")})
+                except store.InvalidTransition as e:
+                    return self._json(HTTPStatus.CONFLICT, {"error": str(e)})
+                except ValueError as e:
+                    return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+                finally:
+                    conn.close()
             if m and m.group(2) == "send":
                 item_id = int(m.group(1))
                 conn = db.open_db()

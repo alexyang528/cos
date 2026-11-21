@@ -593,6 +593,13 @@ MIGRATIONS: tuple[Migration, ...] = (
             "WHERE lead = 'chief' AND status IN ('pending','likely_done','changes_requested','approved','failed')",
         ),
     ),
+    Migration(
+        19,
+        "the lead's priority, kept once I change it",
+        # Set on my first change, like original_body: the lead's call, for the brain to compare with mine. While
+        # it is set, a lead's revision keeps my priority.
+        ("ALTER TABLE items ADD COLUMN original_priority INTEGER",),
+    ),
 )
 
 assert [m.version for m in MIGRATIONS] == list(range(1, len(MIGRATIONS) + 1)), "migration versions must be contiguous"

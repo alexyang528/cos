@@ -198,6 +198,9 @@ tr.selected { box-shadow: inset 3px 0 0 var(--brand); }
 .pane-pri { display: flex; align-items: center; gap: 6px; color: var(--pane-text); font-variant-numeric: tabular-nums; }
 .pri-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pane-p1); }
 .pri-dot.p0 { background: var(--pane-p0); } .pri-dot.p2 { background: var(--pane-p2); }
+.pri-select { font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px;
+  padding: 1px 2px; margin: -2px 0; cursor: pointer; }
+.pri-select:hover, .pri-select:focus { border-color: var(--pane-line); outline: none; }
 .pane-close { margin: -4px -12px -4px auto; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
               background: none; border: 0; border-radius: 10px; color: var(--pane-muted); cursor: pointer; }
 .pane-close:hover { color: var(--pane-text); background: var(--pane-secondary); }
@@ -640,7 +643,7 @@ function renderQueue() {
       : el("div", { class: "table-card" }, emptyState("check", "Nothing here",
           state.source === "all" ? "Nothing in the queue needs you." : `Nothing from ${state.source} needs you.`)),
     el("div", { class: "hint" }, el("kbd", {}, "j"), " ", el("kbd", {}, "k"), " move · ", el("kbd", {}, "Enter"), " open · ",
-      el("kbd", {}, "a"), " approve · ", el("kbd", {}, "Esc"), " close · ", el("kbd", {}, "r"), " refresh"),
+      el("kbd", {}, "a"), " approve · ", el("kbd", {}, "0"), " ", el("kbd", {}, "1"), " ", el("kbd", {}, "2"), " priority · ", el("kbd", {}, "Esc"), " close · ", el("kbd", {}, "r"), " refresh"),
   ];
 }
 
@@ -751,7 +754,7 @@ function renderSheet() {
   sheet.replaceChildren(
     el("header", { class: "pane-head" },
       el("div", { class: "pane-meta" },
-        el("span", { class: "pane-pri" }, el("span", { class: `pri-dot p${it.priority}` }), `P${it.priority}`),
+        el("span", { class: "pane-pri" }, el("span", { class: `pri-dot p${it.priority}` }), priorityControl(it)),
         sep(), el("span", {}, it.source_label || it.lead), sep(), el("span", {}, ago(it.created_at)),
         status ? [sep(), el("span", {}, status)] : null,
         el("button", { class: "pane-close", "aria-label": "Close", onclick: closeSheet }, icon("x", 16))),
@@ -769,6 +772,23 @@ function renderSheet() {
 }
 
 const sep = () => el("span", { "aria-hidden": "true" }, "·");
+const PRI_LABELS = { 0: "P0 · urgent", 1: "P1 · needs you", 2: "P2 · fyi" };
+// Open items take my priority; a lead's later revision keeps it.
+function priorityControl(it) {
+  if (!LAUNCHABLE.includes(it.status) && it.status !== "changes_requested") return `P${it.priority}`;
+  const pick = el("select", { class: "pri-select", "aria-label": "Priority", title: "Change priority (0, 1, 2)",
+    onchange: e => setPriority(it, Number(e.target.value)) },
+    [0, 1, 2].map(p => el("option", { value: p, selected: p === it.priority }, PRI_LABELS[p])));
+  return pick;
+}
+async function setPriority(it, p) {
+  if (p === it.priority) return;
+  try {
+    await api(`/api/items/${it.id}/priority`, { method: "POST", body: JSON.stringify({ priority: p }) });
+    toast(`#${it.id} is now P${p}`);
+    await load();
+  } catch (e) { toast(e.message); await load(); }
+}
 const paneLabel = (text, tag = "h3") => el(tag, { class: "pane-label" }, text);
 
 function doneSection(it) {
@@ -1415,6 +1435,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "j" || e.key === "ArrowDown") { state.sel = Math.min(state.sel + 1, items.length - 1); if (state.route.id && items[state.sel]) go(page, items[state.sel].id); else render(); e.preventDefault(); }
   else if (e.key === "k" || e.key === "ArrowUp") { state.sel = Math.max(state.sel - 1, 0); if (state.route.id && items[state.sel]) go(page, items[state.sel].id); else render(); e.preventDefault(); }
   else if (e.key === "Enter" && items[state.sel]) go(page, items[state.sel].id);
+  else if (["0", "1", "2"].includes(e.key) && state.route.id) { const it = findItem(state.route.id); if (it && LAUNCHABLE.includes(it.status)) setPriority(it, Number(e.key)); }
   else if (e.key === "a" && state.route.id) { const it = findItem(state.route.id); if (it && NEEDS_REVIEW.includes(it.status)) decide(it, "approve"); else if (it?.status === "likely_done") decide(it, "close"); }
 });
 

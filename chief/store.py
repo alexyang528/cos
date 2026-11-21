@@ -231,6 +231,10 @@ def revise_item(conn: sqlite3.Connection, item_id: int, *, body: str, title: str
     if new_kind == "decision" and new_action is not None and new_action.get("type") not in DECISION_ACTIONS:
         raise ValueError(f"decision items can only carry {sorted(DECISION_ACTIONS)}")
     new_prompt = item["prompt"] if prompt is None else (fix_notion_links(prompt) or None)
+    # A priority I set stays; otherwise it follows the (possibly new) kind.
+    priority = item["priority"]
+    if item["original_priority"] is None:
+        priority = normalize_priority(new_kind, priority)
     body, title, rationale, summary, ask, timeline = (
         fix_notion_links(v) for v in (body, title, rationale, summary, ask, timeline))
     cur = conn.execute(
@@ -240,7 +244,7 @@ def revise_item(conn: sqlite3.Connection, item_id: int, *, body: str, title: str
         f"requester = COALESCE(?, requester), reference = COALESCE(?, reference), timeline = COALESCE(?, timeline), "
         f"updated_at = {NOW_SQL} WHERE id = ? AND status = 'changes_requested'",
         (body, title, rationale, summary, new_kind, json.dumps(new_action) if new_action else None,
-         normalize_priority(new_kind, item["priority"]), new_prompt, workdir, ask, requester, reference, timeline,
+         priority, new_prompt, workdir, ask, requester, reference, timeline,
          item_id),
     )
     if cur.rowcount != 1:
@@ -279,6 +283,19 @@ def record_launch(conn: sqlite3.Connection, item_id: int, *, prompt: str, workdi
                      "worktree_path = COALESCE(?, worktree_path)", "worktree_branch = COALESCE(?, worktree_branch)"]
             params += [warning, worktree_path, worktree_branch]
         conn.execute(f"UPDATE items SET {', '.join(sets)} WHERE id = ?", (*params, item_id))
+
+
+def set_priority(conn: sqlite3.Connection, item_id: int, priority) -> None:
+    """My priority for an open item, any of P0-P2 whatever its kind. Keeps the lead's first call in
+    original_priority, and counts as touching the item (decided_at), so it restarts the expiry clock."""
+    if priority not in (P_URGENT, P_NEEDS_ME, P_FYI):
+        raise ValueError(f"priority must be 0, 1 or 2, not {priority!r}")
+    with transaction(conn):
+        item = get_item(conn, item_id)
+        if item["status"] not in OPEN_STATUSES:
+            raise InvalidTransition(f"item {item_id} is {item['status']}; only open items take a priority")
+        conn.execute(f"UPDATE items SET original_priority = COALESCE(original_priority, priority), priority = ?, "
+                     f"decided_at = {NOW_SQL}, updated_at = {NOW_SQL} WHERE id = ?", (priority, item_id))
 
 
 def mark_likely_done(conn: sqlite3.Connection, item_id: int, reason: str) -> bool:
