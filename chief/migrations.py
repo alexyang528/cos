@@ -600,6 +600,15 @@ MIGRATIONS: tuple[Migration, ...] = (
         # it is set, a lead's revision keeps my priority.
         ("ALTER TABLE items ADD COLUMN original_priority INTEGER",),
     ),
+    # Priority is now escalated (0) or normal (1); what was P2 (fyi) is normal.
+    Migration(
+        20,
+        "priority is escalated or normal",
+        (
+            "UPDATE items SET priority = 1 WHERE priority = 2",
+            "UPDATE items SET original_priority = 1 WHERE original_priority = 2",
+        ),
+    ),
 )
 
 assert [m.version for m in MIGRATIONS] == list(range(1, len(MIGRATIONS) + 1)), "migration versions must be contiguous"

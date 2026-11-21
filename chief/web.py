@@ -604,10 +604,10 @@ def make_handler(token: str, port: int):
                 return self._launch(int(m.group(1)))
             if m and m.group(2) == "instruct":
                 return self._instruct(int(m.group(1)))
-            if m and m.group(2) == "priority":
+            if m and m.group(2) == "escalate":
                 conn = db.open_db()
                 try:
-                    store.set_priority(conn, int(m.group(1)), self._payload().get("priority"))
+                    store.set_escalated(conn, int(m.group(1)), self._payload().get("escalated"))
                     return self._json(HTTPStatus.OK, item_json(store.get_item(conn, int(m.group(1)))))
                 except KeyError as e:
                     return self._json(HTTPStatus.NOT_FOUND, {"error": str(e).strip("'")})

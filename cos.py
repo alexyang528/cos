@@ -229,7 +229,7 @@ def cmd_migrate(args):
 
 def _fmt_item(row) -> str:
     action = json.loads(row["action"])["type"] if row["action"] else "-"
-    return f"#{row['id']:<4} P{row['priority']}  {row['status']:<18} {row['lead']:<12} {row['kind']:<9} {action:<26} {row['title']}"
+    return f"#{row['id']:<4} {'!' if row['priority'] == 0 else ' '}  {row['status']:<18} {row['lead']:<12} {row['kind']:<9} {action:<26} {row['title']}"
 
 
 def cmd_status(args):
@@ -264,10 +264,10 @@ def cmd_expire(args):
         print(f"  #{r['id']:<4} {what:<13} {r['lead']:<12} {r['kind']:<9} {r['title']}")
 
 
-def cmd_priority(args):
+def cmd_escalate(args):
     conn = db.open_db()
     try:
-        store.set_priority(conn, args.id, args.priority)
+        store.set_escalated(conn, args.id, not args.off)
     except store.InvalidTransition as e:
         sys.exit(str(e))
     print(_fmt_item(store.get_item(conn, args.id)))
@@ -289,7 +289,7 @@ def cmd_add(args):
     conn = db.open_db()
     action = json.loads(args.action) if args.action else None
     item_id = store.add_item(conn, lead=args.lead, kind=args.kind, title=args.title, body=args.body or "",
-                             action=action, priority=args.priority, url=args.url, prompt=args.prompt)
+                             action=action, priority=0 if args.escalated else 1, url=args.url, prompt=args.prompt)
     print(f"added item #{item_id}")
 
 
@@ -384,10 +384,10 @@ def main(argv=None):
     q.add_argument("--all", action="store_true")
     q.set_defaults(fn=cmd_queue)
 
-    pr = sub.add_parser("priority", help="set an open item's priority: 0 urgent, 1 needs you, 2 fyi")
-    pr.add_argument("id", type=int)
-    pr.add_argument("priority", type=int, choices=range(3))
-    pr.set_defaults(fn=cmd_priority)
+    es = sub.add_parser("escalate", help="escalate an open item (red dot, sorts first), or --off to make it normal")
+    es.add_argument("id", type=int)
+    es.add_argument("--off", action="store_true")
+    es.set_defaults(fn=cmd_escalate)
 
     s = sub.add_parser("show", help="show one item")
     s.add_argument("id", type=int)
@@ -400,8 +400,7 @@ def main(argv=None):
     a.add_argument("--body")
     a.add_argument("--action", help='JSON, e.g. {"type":"switchboard_approve_phase","plan_id":"pl_...","phase":"technical_design"}')
     a.add_argument("--prompt", help="an agent prompt to launch as a Claude Code session")
-    a.add_argument("--priority", type=int, default=1, choices=range(3),
-                   help="0 urgent, 1 needs you, 2 fyi (fyi items are always 2)")
+    a.add_argument("--escalated", action="store_true", help="red dot, sorts first (never for an fyi)")
     a.add_argument("--url")
     a.set_defaults(fn=cmd_add)
 

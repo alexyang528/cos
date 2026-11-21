@@ -253,8 +253,8 @@ Item rules:
   switchboard_approve_phase, which only a decision item may carry.
 - kind "fyi": something {me} should know but need not answer. No action.
 - Allowed action types for you: {actions or "none"}.{(" Formats:" + chr(10) + chr(10).join(f"  {ACTION_FORMATS[a]}" for a in actions)) if actions else ""}
-- priority (lower is more urgent): 0 = urgent, someone is blocked on {me} today or it is an incident;
-  1 = needs {me} (a question, decision or task); 2 = fyi. Every fyi item is 2.
+- escalated: true only when someone is blocked on {me} today or it is an incident; otherwise false. An fyi is
+  never escalated. Escalated items get a red dot and sort first.
 - title: "<who> in <where>: <gist>" (a meeting task: "<meeting>: <what to do>"), at most 100 characters. It
   labels the item in lists; the pane shows "ask" instead.
 - summary: 1 to 4 short lines, each starting with "- ": where the discussion stands now and exactly what is
@@ -283,7 +283,8 @@ Output schema:
 {{"items": [{{"route_ids": [1], "kind": "task" | "decision" | "fyi", "title": "...", "summary": "- ...", "body": "...",
    "ask": "...", "requester": "... or null", "reference": "... or null",
    "timeline": [{{"at": "2026-11-16T10:54:00-05:00", "until": null, "text": "..."}}],
-   "priority": 1, "url": "https://...", "action": {{...}} | null, "prompt": "... or null", "workdir": "... or null",
+   "escalated": false, "url": "https://...", "action": {{...}} | null, "prompt": "... or null",
+   "workdir": "... or null",
    "why": "evidence and reasoning, brief"}}],
  "revisions": [{{"item_id": 7, "body": "...", "title": "... or null", "summary": "updated summary or null",
    "ask": "... or null to keep", "requester": "... or null to keep", "reference": "... or null to keep",
@@ -534,7 +535,7 @@ def run(conn: sqlite3.Connection, name: str, *, dry_run: bool = False) -> None:
                 conn, lead=name, kind=it.get("kind"), title=str(it.get("title") or "")[:200],
                 body=str(it.get("body") or ""), action=it.get("action"),
                 prompt=prompt, workdir=clean_workdir(it.get("workdir"), prompt), **framing(it),
-                priority=it.get("priority", 1), url=pick_url(name, it.get("url"), route_ids[rids[0]]["url"]),
+                priority=store.escalated_from(it), url=pick_url(name, it.get("url"), route_ids[rids[0]]["url"]),
                 route_id=rids[0], run_id=result.run_id, rationale=it.get("why"),
                 summary=str(it.get("summary") or "")[:1200] or route_ids[rids[0]]["summary"],
             )

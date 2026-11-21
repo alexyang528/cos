@@ -56,19 +56,24 @@ def validate_action(action: dict[str, Any] | None) -> None:
         raise ValueError(f"unknown action type {kind!r}; expected one of {sorted(ACTION_WRITE_TOOLS)}")
 
 
-# P0 = urgent (someone blocked today, incident), P1 = needs me, P2 = FYI. Lower sorts first.
-P_URGENT, P_NEEDS_ME, P_FYI = 0, 1, 2
+# Two levels, stored in items.priority so escalated items sort first: escalated (someone is blocked on me today, or
+# an incident) or normal.
+P_ESCALATED, P_NORMAL = 0, 1
+
+
+def escalated_from(out: dict) -> int:
+    """The priority a lead asked for: "escalated": true, or the older "priority": 0."""
+    return P_ESCALATED if out.get("escalated") is True or out.get("priority") == 0 else P_NORMAL
 
 
 def normalize_priority(kind: str, priority) -> int:
+    """A lead may escalate anything but an fyi; I can escalate anything (set_escalated)."""
     if kind == "fyi":
-        return P_FYI
+        return P_NORMAL
     try:
-        p = int(priority)
+        return P_ESCALATED if int(priority) <= P_ESCALATED else P_NORMAL
     except (TypeError, ValueError):
-        return P_NEEDS_ME
-    # Anything that isn't an FYI needs me, so it is at most P1.
-    return P_URGENT if p <= P_URGENT else P_NEEDS_ME
+        return P_NORMAL
 
 
 def add_item(
@@ -231,7 +236,7 @@ def revise_item(conn: sqlite3.Connection, item_id: int, *, body: str, title: str
     if new_kind == "decision" and new_action is not None and new_action.get("type") not in DECISION_ACTIONS:
         raise ValueError(f"decision items can only carry {sorted(DECISION_ACTIONS)}")
     new_prompt = item["prompt"] if prompt is None else (fix_notion_links(prompt) or None)
-    # A priority I set stays; otherwise it follows the (possibly new) kind.
+    # An escalation I set or removed stays; otherwise it follows the (possibly new) kind.
     priority = item["priority"]
     if item["original_priority"] is None:
         priority = normalize_priority(new_kind, priority)
@@ -285,15 +290,16 @@ def record_launch(conn: sqlite3.Connection, item_id: int, *, prompt: str, workdi
         conn.execute(f"UPDATE items SET {', '.join(sets)} WHERE id = ?", (*params, item_id))
 
 
-def set_priority(conn: sqlite3.Connection, item_id: int, priority) -> None:
-    """My priority for an open item, any of P0-P2 whatever its kind. Keeps the lead's first call in
+def set_escalated(conn: sqlite3.Connection, item_id: int, escalated) -> None:
+    """Escalate an open item or make it normal, whatever its kind. Keeps the lead's first call in
     original_priority, and counts as touching the item (decided_at), so it restarts the expiry clock."""
-    if priority not in (P_URGENT, P_NEEDS_ME, P_FYI):
-        raise ValueError(f"priority must be 0, 1 or 2, not {priority!r}")
+    if not isinstance(escalated, bool):
+        raise ValueError(f"escalated must be true or false, not {escalated!r}")
+    priority = P_ESCALATED if escalated else P_NORMAL
     with transaction(conn):
         item = get_item(conn, item_id)
         if item["status"] not in OPEN_STATUSES:
-            raise InvalidTransition(f"item {item_id} is {item['status']}; only open items take a priority")
+            raise InvalidTransition(f"item {item_id} is {item['status']}; only open items can be escalated")
         conn.execute(f"UPDATE items SET original_priority = COALESCE(original_priority, priority), priority = ?, "
                      f"decided_at = {NOW_SQL}, updated_at = {NOW_SQL} WHERE id = ?", (priority, item_id))
 

@@ -94,9 +94,9 @@ def build_brain_prompt(current: str, rows) -> str:
             "my_edited_prompt": r["prompt"] if r["original_prompt"] is not None else None,
             "launched_session": r["launched_at"] is not None,
             "lead_found_done": r["done_reason"] if r["status"] == "done" else None,
-            "priority_change": ({"lead": r["original_priority"], "mine": r["priority"]}
-                                if r["original_priority"] is not None and r["original_priority"] != r["priority"]
-                                else None),
+            "escalation_change": ({"lead_escalated": r["original_priority"] == 0, "my_call": r["priority"] == 0}
+                                  if r["original_priority"] is not None and r["original_priority"] != r["priority"]
+                                  else None),
             "reopened_after_lead_said_done": r["reopened_at"] is not None,
         })
     return f"""{prompts.SAFETY}
@@ -110,8 +110,8 @@ recent queue decisions below. What each outcome means:
 - lead_found_done: the lead re-read the source, found the work already finished (its evidence), and {me}
   confirmed. Says nothing about whether the item was worth surfacing.
 - reopened_after_lead_said_done: a lead called it finished and {me} said it wasn't: the lead closed too eagerly.
-- priority_change: {me} re-prioritized the item (0 urgent, 1 needs {me}, 2 fyi) from the lead's call. Learn how
-  urgent {me} finds that kind of ask, requester or source.
+- escalation_change: {me} escalated an item the lead left normal, or un-escalated one the lead escalated.
+  Learn what {me} treats as urgent: that kind of ask, requester or source.
 - expired: {me} never touched it in {config.EXPIRE_AFTER_DAYS} days (no click, no note, no session), so it
   closed on its own. Likely not relevant or not worth raising, but one expiry is weak evidence ({me} may just
   have been busy). Look for what expired items share (lead, kind, source, channel, requester, topic) and write

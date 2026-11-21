@@ -40,7 +40,7 @@
   --pane-bg: var(--card); --pane-card: var(--muted); --pane-input: var(--background); --pane-foot: var(--ground);
   --pane-text: var(--foreground); --pane-muted: var(--muted-foreground); --pane-border: var(--input);
   --pane-line: var(--border); --pane-secondary: var(--muted); --pane-primary: var(--primary);
-  --pane-primary-fg: var(--primary-foreground); --pane-p0: var(--red-solid); --pane-p1: #E3A93A; --pane-p2: var(--gray-solid);
+  --pane-primary-fg: var(--primary-foreground);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -67,7 +67,7 @@
     color-scheme: dark;
     --pane-bg: #1E1D1A; --pane-card: #2A2925; --pane-input: #121210; --pane-foot: #1B1A18;
     --pane-text: #ECEAE4; --pane-muted: #A3A097; --pane-border: #3A3934; --pane-line: #36352F;
-    --pane-secondary: #2C2B27; --pane-primary: #E9E7E1; --pane-primary-fg: #1E1D1A; --pane-p1: #E3A93A;
+    --pane-secondary: #2C2B27; --pane-primary: #E9E7E1; --pane-primary-fg: #1E1D1A;
   }
 }
 
@@ -126,8 +126,6 @@ h1 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -.025
 .tone-red { background: var(--red-bg); color: var(--red-fg); }
 .tone-blue { background: var(--blue-bg); color: var(--blue-fg); }
 .tone-gray { background: var(--gray-bg); color: var(--gray-fg); }
-.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
-.pri { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
 
 /* Buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 12px;
@@ -196,11 +194,13 @@ tr.selected { box-shadow: inset 3px 0 0 var(--brand); }
 .pane-head { padding: 18px 28px 24px; display: flex; flex-direction: column; gap: 12px; }
 .pane-meta { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--pane-muted); }
 .pane-pri { display: flex; align-items: center; gap: 6px; color: var(--pane-text); font-variant-numeric: tabular-nums; }
-.pri-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pane-p1); }
-.pri-dot.p0 { background: var(--pane-p0); } .pri-dot.p2 { background: var(--pane-p2); }
-.pri-select { font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px;
-  padding: 1px 2px; margin: -2px 0; cursor: pointer; }
-.pri-select:hover, .pri-select:focus { border-color: var(--pane-line); outline: none; }
+.esc-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--red-solid); flex: none; }
+.cell-title .esc-dot { margin-right: 7px; vertical-align: 1px; }
+.esc-toggle { display: inline-flex; align-items: center; gap: 6px; font: inherit; color: var(--pane-muted); background: transparent;
+  border: 1px solid transparent; border-radius: 6px; padding: 1px 6px; margin: -2px -6px; cursor: pointer; }
+.esc-toggle:hover, .esc-toggle:focus-visible { border-color: var(--pane-line); outline: none; }
+.esc-toggle.on { color: var(--pane-text); }
+.esc-toggle .esc-ring { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--pane-muted); }
 .pane-close { margin: -4px -12px -4px auto; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
               background: none; border: 0; border-radius: 10px; color: var(--pane-muted); cursor: pointer; }
 .pane-close:hover { color: var(--pane-text); background: var(--pane-secondary); }
@@ -455,8 +455,8 @@ const STATUS = {
   dismissed: ["Dismissed", "gray"], expired: ["Expired", "gray"],
 };
 const RUN_STATUS = { ok: ["OK", "green"], error: ["Error", "red"], running: ["Running", "blue"], dry_run: ["Dry run", "gray"] };
-// P0 urgent, P1 needs you, P2 FYI. Lower sorts first.
-const PRI = { 0: ["P0", "var(--red-solid)"], 1: ["P1", "var(--yellow-solid)"], 2: ["P2", "var(--gray-solid)"] };
+// Escalated items (priority 0) get a red dot and sort first; everything else is normal.
+const isEscalated = it => it.priority === 0;
 const badge = ([label, tone]) => el("span", { class: `badge tone-${tone}` }, label);
 const statusBadge = s => badge(STATUS[s] || [s, "gray"]);
 // Waiting and likely-done items count down once the server says they're within the warning window (expires_at is
@@ -468,7 +468,6 @@ function expiryLabel(it) {
   return it.status === "pending" ? `Expires ${when}` : `Closes as done ${when}`;
 }
 const itemBadge = it => { const e = expiryLabel(it); return e ? badge([e, it.status === "pending" ? "red" : "green"]) : statusBadge(it.status); };
-const pri = p => el("span", { class: "pri" }, el("span", { class: "dot", style: `background:${PRI[p][1]}` }), PRI[p][0]);
 const EFFECTS = {
   gmail_draft: a => `Creates a Gmail draft${a.thread_id ? " on thread " + a.thread_id : ""}. You send it yourself.`,
   slack_reply: a => `Posts to Slack ${a.channel_id || a.channel || "?"}${a.thread_ts ? " in thread " + a.thread_ts : ""}.`,
@@ -545,7 +544,7 @@ function renderChrome() {
       title: w.status === "paused" ? `${w.name} (paused)` : w.name },
       icon("layers"), el("span", { class: "nav-label" + (w.status === "paused" ? " muted" : "") }, w.name),
       w.running ? el("span", { class: "spinner", "aria-label": "lead working" }) : null,
-      w.urgent ? el("span", { class: "nav-dot", title: `${w.urgent} urgent`, "aria-label": `${w.urgent} urgent` }) : null,
+      w.urgent ? el("span", { class: "nav-dot", title: `${w.urgent} escalated`, "aria-label": `${w.urgent} escalated` }) : null,
       w.needs_review ? el("span", { class: "nav-count" }, w.needs_review) : null)),
     ...(q.ws_proposals || []).map(p => el("button", {
       class: "nav-row", "aria-current": state.route.page === `wsp:${p.id}` ? "page" : null, onclick: () => go(`wsp:${p.id}`),
@@ -602,9 +601,8 @@ function itemTable(items, { selectable }) {
   const rows = items.map((it, idx) => {
     const tr = el("tr", { class: "clickable" + (selectable && idx === state.sel ? " selected" : "") + (state.route.id === it.id ? " current" : ""),
       onclick: () => go(state.route.page, it.id) },
-      el("td", { class: "hide-sm" }, pri(it.priority)),
       el("td", {}, el("div", { class: "item-cell" }, sourceMark(sourceOf(it)), el("div", {},
-        el("div", { class: "cell-title" }, it.title),
+        el("div", { class: "cell-title" }, isEscalated(it) ? el("span", { class: "esc-dot", title: "Escalated", "aria-label": "Escalated" }) : null, it.title),
         el("div", { class: "cell-sub" }, `#${it.id} · ${it.lead} · ${it.kind}${it.action ? " · " + it.action.type.replace(/_/g, " ") : ""}`
           + (it.prompt && !it.launched_at ? " · agent prompt" : "")
           + (it.sessions?.length ? ` · ${it.sessions.length} Claude session${it.sessions.length > 1 ? "s" : ""}` : ""))))),
@@ -614,7 +612,7 @@ function itemTable(items, { selectable }) {
     return tr;
   });
   return el("div", { class: "table-card" }, el("table", {},
-    el("thead", {}, el("tr", {}, el("th", { class: "hide-sm", style: "width:64px" }, "Priority"), el("th", {}, "Item"),
+    el("thead", {}, el("tr", {}, el("th", {}, "Item"),
       showWs ? el("th", { class: "hide-sm", style: "width:160px" }, "Workstream") : null,
       el("th", { style: "width:130px" }, "Status"), el("th", { class: "right hide-sm", style: "width:110px" }, "Updated"))),
     el("tbody", {}, rows)));
@@ -643,7 +641,7 @@ function renderQueue() {
       : el("div", { class: "table-card" }, emptyState("check", "Nothing here",
           state.source === "all" ? "Nothing in the queue needs you." : `Nothing from ${state.source} needs you.`)),
     el("div", { class: "hint" }, el("kbd", {}, "j"), " ", el("kbd", {}, "k"), " move · ", el("kbd", {}, "Enter"), " open · ",
-      el("kbd", {}, "a"), " approve · ", el("kbd", {}, "0"), " ", el("kbd", {}, "1"), " ", el("kbd", {}, "2"), " priority · ", el("kbd", {}, "Esc"), " close · ", el("kbd", {}, "r"), " refresh"),
+      el("kbd", {}, "a"), " approve · ", el("kbd", {}, "e"), " escalate · ", el("kbd", {}, "Esc"), " close · ", el("kbd", {}, "r"), " refresh"),
   ];
 }
 
@@ -754,7 +752,7 @@ function renderSheet() {
   sheet.replaceChildren(
     el("header", { class: "pane-head" },
       el("div", { class: "pane-meta" },
-        el("span", { class: "pane-pri" }, el("span", { class: `pri-dot p${it.priority}` }), priorityControl(it)),
+        el("span", { class: "pane-pri" }, escalateControl(it)),
         sep(), el("span", {}, it.source_label || it.lead), sep(), el("span", {}, ago(it.created_at)),
         status ? [sep(), el("span", {}, status)] : null,
         el("button", { class: "pane-close", "aria-label": "Close", onclick: closeSheet }, icon("x", 16))),
@@ -772,20 +770,20 @@ function renderSheet() {
 }
 
 const sep = () => el("span", { "aria-hidden": "true" }, "·");
-const PRI_LABELS = { 0: "P0 · urgent", 1: "P1 · needs you", 2: "P2 · fyi" };
-// Open items take my priority; a lead's later revision keeps it.
-function priorityControl(it) {
-  if (!LAUNCHABLE.includes(it.status) && it.status !== "changes_requested") return `P${it.priority}`;
-  const pick = el("select", { class: "pri-select", "aria-label": "Priority", title: "Change priority (0, 1, 2)",
-    onchange: e => setPriority(it, Number(e.target.value)) },
-    [0, 1, 2].map(p => el("option", { value: p, selected: p === it.priority }, PRI_LABELS[p])));
-  return pick;
+// Open items can be escalated or made normal; a lead's later revision keeps my call. Closed ones just show it.
+function escalateControl(it) {
+  const on = isEscalated(it);
+  if (!LAUNCHABLE.includes(it.status) && it.status !== "changes_requested")
+    return on ? [el("span", { class: "esc-dot" }), "Escalated"] : "Normal";
+  return el("button", { class: "esc-toggle" + (on ? " on" : ""), "aria-pressed": String(on),
+    title: on ? "Escalated. Click (or press e) to make it normal" : "Click (or press e) to escalate", onclick: () => toggleEscalated(it) },
+    on ? el("span", { class: "esc-dot" }) : el("span", { class: "esc-ring" }), on ? "Escalated" : "Escalate");
 }
-async function setPriority(it, p) {
-  if (p === it.priority) return;
+async function toggleEscalated(it) {
+  const escalated = !isEscalated(it);
   try {
-    await api(`/api/items/${it.id}/priority`, { method: "POST", body: JSON.stringify({ priority: p }) });
-    toast(`#${it.id} is now P${p}`);
+    await api(`/api/items/${it.id}/escalate`, { method: "POST", body: JSON.stringify({ escalated }) });
+    toast(escalated ? `#${it.id} escalated` : `#${it.id} is back to normal`);
     await load();
   } catch (e) { toast(e.message); await load(); }
 }
@@ -1435,7 +1433,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "j" || e.key === "ArrowDown") { state.sel = Math.min(state.sel + 1, items.length - 1); if (state.route.id && items[state.sel]) go(page, items[state.sel].id); else render(); e.preventDefault(); }
   else if (e.key === "k" || e.key === "ArrowUp") { state.sel = Math.max(state.sel - 1, 0); if (state.route.id && items[state.sel]) go(page, items[state.sel].id); else render(); e.preventDefault(); }
   else if (e.key === "Enter" && items[state.sel]) go(page, items[state.sel].id);
-  else if (["0", "1", "2"].includes(e.key) && state.route.id) { const it = findItem(state.route.id); if (it && LAUNCHABLE.includes(it.status)) setPriority(it, Number(e.key)); }
+  else if (e.key === "e" && state.route.id) { const it = findItem(state.route.id); if (it && LAUNCHABLE.includes(it.status)) toggleEscalated(it); }
   else if (e.key === "a" && state.route.id) { const it = findItem(state.route.id); if (it && NEEDS_REVIEW.includes(it.status)) decide(it, "approve"); else if (it?.status === "likely_done") decide(it, "close"); }
 });
 

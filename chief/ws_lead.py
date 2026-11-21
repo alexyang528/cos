@@ -229,7 +229,7 @@ Item rules:
 {chr(10).join(f"  {ACTION_FORMATS[a]}" for a in actions)}
 - An action's plan must be one of this workstream's active sources or the plan of an inbox message or
   revision. switchboard_close_plan only when an instruction or note from {me} asks for it.
-- priority: 0 = someone is blocked on {me} today, or it is due today; otherwise 1.
+- escalated: true only when someone is blocked on {me} today, or it is due today; otherwise false.
 - title: "<who> in <where>: <gist>" for answering someone, "<what to do>" for other tasks, at most 100
   characters.
 - summary: 1 to 4 lines, each starting with "- ": what is pending on {me} and why now. Facts only.
@@ -247,7 +247,7 @@ Output schema:
  "items": [{{"route_ids": [], "kind": "decision" | "task", "title": "...",
    "ask": "...", "requester": "... or null", "reference": "... or null",
    "timeline": [{{"at": "ISO time", "until": null, "text": "..."}}],
-   "summary": "- ...", "body": "...", "priority": 1, "url": "https://...", "action": {{...}} | null,
+   "summary": "- ...", "body": "...", "escalated": false, "url": "https://...", "action": {{...}} | null,
    "prompt": "... or null", "workdir": "... or null", "why": "evidence and reasoning, brief"}}],
  "revisions": [{{"item_id": 7, "body": "...", "title": "... or null", "summary": "... or null",
    "ask": "... or null to keep", "requester": "... or null to keep", "reference": "... or null to keep",
@@ -412,7 +412,7 @@ def apply(conn, w, run_id: int, data: dict, routes, revs, instrs, acts, reasons,
         try:
             item_id = store.add_item(
                 conn, lead="workstream", kind=kind, title=str(it.get("title") or "")[:200],
-                body=str(it.get("body") or ""), action=action, priority=it.get("priority", 1), url=url,
+                body=str(it.get("body") or ""), action=action, priority=store.escalated_from(it), url=url,
                 prompt=prompt, workdir=clean_workdir(it.get("workdir"), prompt), **framing(it),
                 route_id=rids[0] if rids else None, run_id=run_id, rationale=it.get("why"),
                 summary=str(it.get("summary") or "")[:1200] or (route_ids[rids[0]]["summary"] if rids else None),
