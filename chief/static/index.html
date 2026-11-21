@@ -1136,12 +1136,10 @@ function renderChief() {
       r.status === "provisional" ? el("button", { class: "btn btn-outline btn-xs", onclick: () => ruleAction(r, "confirm") }, "Confirm") : null,
       ["provisional", "confirmed"].includes(r.status) ? el("button", { class: "btn btn-ghost btn-xs", onclick: () => ruleAction(r, "retire") }, "Retire") : null)),
     el("div", { class: "sheet-actions", style: "margin-top:10px" }, el("button", { class: "btn btn-ghost btn-sm", onclick: () => dismiss(n) }, "Dismiss")));
-  const section = (title, sub, cards) => cards.length ? el("section", { class: "pane-section", style: "margin-bottom:20px" },
+  const section = (title, sub, cards) => cards.length ? el("section", { class: "pane-section", style: "margin-top:28px" },
     el("h3", { class: "pane-label" }, title), el("div", { class: "pane-hint" }, sub), el("div", { class: "tell-list" }, cards)) : null;
   return [
     pageHeader("Chief of staff", "Tell it what you want: track a conversation the system missed (it also works out why, and fixes the rules), add or retire a rule, or rerun an agent."),
-    section("Needs you", "Problems in the system a rule can't fix: scanner or code bugs, config, recurring failures.", needs.map(noteCard)),
-    section("Fixed on its own", "Problems it fixed with provisional rules. They expire in 7 days unless you confirm them.", fixed.map(noteCard)),
     el("div", { class: "card", style: "margin-bottom:16px" },
       el("div", { class: "form-grid" }, box,
         el("div", { class: "sheet-actions" },
@@ -1155,6 +1153,8 @@ function renderChief() {
       !i.finished_at ? el("div", { class: "working", style: "margin-top:10px" }, el("span", { class: "spinner", "aria-hidden": "true" }),
         el("div", {}, i.picked_up_at ? "Running the agents it started…" : "The chief of staff is working on this…")) : null)))
       : el("div", { class: "table-card" }, emptyState("spark", "Nothing yet", "What you tell the chief of staff, and what it did, shows up here.")),
+    section("Needs you", "Problems in the system a rule can't fix: scanner or code bugs, config, recurring failures.", needs.map(noteCard)),
+    section("Fixed on its own", "Problems it fixed with provisional rules. They expire in 7 days unless you confirm them.", fixed.map(noteCard)),
   ];
 }
 
