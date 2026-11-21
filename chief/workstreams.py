@@ -324,6 +324,84 @@ def promote_item(conn, item_id: int, name: str) -> int:
     return ws_id
 
 
+# --- suggestions from the chief of staff ---------------------------------------------------------------------
+
+def proposal(conn, proposal_id: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM ws_proposals WHERE id = ?", (proposal_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"no suggested workstream {proposal_id}")
+    return row
+
+
+def proposable_items(conn) -> set[int]:
+    """Open items in no workstream and in no pending suggestion: the only ones a new suggestion may group."""
+    held = {i for r in conn.execute("SELECT item_ids FROM ws_proposals WHERE status = 'proposed'")
+            for i in json.loads(r["item_ids"])}
+    rows = conn.execute(f"SELECT id FROM items WHERE workstream_id IS NULL AND status IN "
+                        f"({','.join('?' * len(MOVABLE_STATUSES))})", MOVABLE_STATUSES)
+    return {r["id"] for r in rows} - held
+
+
+def propose(conn, name: str, description: str, why: str, item_ids: list, run_id: int | None) -> int:
+    name = str(name or "").strip()[:100]
+    if not name:
+        raise ValueError("a suggestion needs a name")
+    # Items closed, moved or claimed by another suggestion since the chief looked are left out.
+    ids = sorted({i for i in item_ids if isinstance(i, int)} & proposable_items(conn))
+    if len(ids) < 2:
+        raise ValueError("fewer than two of its items are open and free to group")
+    if conn.execute("SELECT 1 FROM ws_proposals WHERE status = 'proposed' AND lower(name) = lower(?) "
+                    "UNION SELECT 1 FROM workstreams WHERE status != 'archived' AND lower(name) = lower(?)",
+                    (name, name)).fetchone():
+        raise ValueError(f"'{name}' is already a workstream or a suggestion")
+    return conn.execute(
+        "INSERT INTO ws_proposals(name, description, why, item_ids, run_id) VALUES (?, ?, ?, ?, ?)",
+        (name, str(description or "").strip()[:2000], str(why or "").strip()[:1000], json.dumps(ids), run_id),
+    ).lastrowid
+
+
+def accept_proposal(conn, proposal_id: int, name: str | None = None, description: str | None = None) -> int:
+    """Create the workstream: it watches each item's conversation (the thread or plan), and the items that are still
+    open move into it. Returns the new workstream's id; its lead sets it up on its first run."""
+    p = proposal(conn, proposal_id)
+    if p["status"] != "proposed":
+        raise Conflict(f"this suggestion was already {p['status']}")
+    desc = (description if description is not None else p["description"]).strip()
+    if p["why"]:
+        desc += f"\n\nSuggested by the chief of staff: {p['why']}"
+    ws_id, _ = create(conn, (name or p["name"]).strip(), desc)
+    ids = json.loads(p["item_ids"])
+    for item in conn.execute(
+            f"SELECT i.id, i.title, i.url, i.workstream_id, i.status, e.source, e.payload FROM items i "
+            f"LEFT JOIN routes r ON r.id = i.route_id LEFT JOIN events e ON e.id = r.event_id "
+            f"WHERE i.id IN ({','.join('?' * len(ids))})", ids).fetchall():
+        if item["workstream_id"] is not None or item["status"] not in MOVABLE_STATUSES:
+            continue  # moved or closed since the suggestion; leave it where it is
+        refs = event_refs(item["source"], json.loads(item["payload"] or "{}")) if item["source"] else []
+        for kind, ref in refs[:1]:
+            try:
+                add_source(conn, ws_id, kind, ref, by="user", url=item["url"], label=item["title"][:80])
+            except (Conflict, ValueError):
+                pass
+        if conn.execute("SELECT workstream_id FROM items WHERE id = ?", (item["id"],)).fetchone()[0] != ws_id:
+            move_item(conn, item["id"], ws_id)
+    conn.execute(f"UPDATE ws_proposals SET status = 'approved', workstream_id = ?, decided_at = {NOW} WHERE id = ?",
+                 (ws_id, proposal_id))
+    return ws_id
+
+
+def reject_proposal(conn, proposal_id: int, note: str | None = None) -> None:
+    if proposal(conn, proposal_id)["status"] != "proposed":
+        raise Conflict("this suggestion was already decided")
+    conn.execute(f"UPDATE ws_proposals SET status = 'rejected', note = ?, decided_at = {NOW} WHERE id = ?",
+                 ((note or "").strip()[:1000] or None, proposal_id))
+
+
+def pending_proposals(conn) -> list[dict]:
+    return [{**dict(r), "item_ids": json.loads(r["item_ids"])}
+            for r in conn.execute("SELECT * FROM ws_proposals WHERE status = 'proposed' ORDER BY id")]
+
+
 def set_status(conn, ws_id: int, status: str) -> None:
     ws = get(conn, ws_id)
     if status == "archived":

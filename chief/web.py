@@ -43,6 +43,7 @@ RULE_PATH = re.compile(r"^/api/rules/(\d+)/(confirm|retire)$")
 WS_GET = re.compile(r"^/api/workstreams/(\d+)$")
 WS_PATH = re.compile(r"^/api/workstreams/(\d+)/([a-z]+)$")
 SOURCE_PATH = re.compile(r"^/api/sources/(\d+)/(accept|reject|remove)$")
+PROPOSAL_PATH = re.compile(r"^/api/proposals/(\d+)/(accept|reject)$")
 # Workstreams whose lead this server started and hasn't finished; the page polls while one is running.
 RUNNING: set[int] = set()
 
@@ -173,6 +174,7 @@ def snapshot(conn, include_recent: bool) -> dict:
         "owners": sorted(QUEUE_OWNERS),
         "leads": [*config.ENABLED_LEADS, "workstream"],
         "workstreams": [{**w, "running": w["id"] in RUNNING} for w in workstreams.summaries(conn)],
+        "ws_proposals": workstreams.pending_proposals(conn),
         "workdirs": list(config.SESSION_WORKDIRS),
         "default_workdir": config.DEFAULT_WORKDIR,
         "worktree_by_default": sorted(config.WORKTREE_BY_DEFAULT),
@@ -333,6 +335,35 @@ def make_handler(token: str, port: int):
             else:
                 run_lead_in_background(item["lead"])
             return self._json(HTTPStatus.ACCEPTED, {"ok": True, "status": "with lead"})
+
+        def _proposal(self, proposal_id: str, verb: str):
+            """Create or reject a workstream the chief of staff suggested. Creating one starts its lead."""
+            from . import workstreams as ws
+            try:
+                body = self._payload()
+            except ValueError as e:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+            conn = db.open_db()
+            try:
+                if verb == "accept":
+                    name, desc = body.get("name"), body.get("description")
+                    ws_id = ws.accept_proposal(conn, int(proposal_id), name=str(name) if name else None,
+                                               description=str(desc) if isinstance(desc, str) else None)
+                    result = {"ok": True, "id": ws_id}
+                else:
+                    ws.reject_proposal(conn, int(proposal_id), str(body.get("note") or ""))
+                    result = {"ok": True}
+            except KeyError as e:
+                return self._json(HTTPStatus.NOT_FOUND, {"error": str(e).strip("'")})
+            except ws.Conflict as e:
+                return self._json(HTTPStatus.CONFLICT, {"error": str(e)})
+            except ValueError as e:
+                return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+            finally:
+                conn.close()
+            if verb == "accept":
+                run_workstream_in_background(result["id"])
+            return self._json(HTTPStatus.OK, result)
 
         def _close_likely_done(self):
             """Close the likely-done items I was looking at. Only those ids, and only while still likely_done, so an
@@ -527,6 +558,8 @@ def make_handler(token: str, port: int):
                 return self._resume()
             if self.path == "/api/items/close-likely-done":
                 return self._close_likely_done()
+            if PROPOSAL_PATH.match(self.path):
+                return self._proposal(*PROPOSAL_PATH.match(self.path).groups())
             m = ITEM_PATH.match(self.path)
             if m and m.group(2) == "unlink":
                 return self._unlink(int(m.group(1)))

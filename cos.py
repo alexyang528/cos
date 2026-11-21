@@ -121,6 +121,18 @@ def cmd_ws(args):
         for u in unparsed:
             print(f"  not a watchable source, kept in the description: {u}")
         return
+    if c == "suggested":
+        for p in ws.pending_proposals(conn):
+            print(f"#{p['id']:<3} {p['name']}  items {p['item_ids']}\n      {p['why']}")
+        return
+    if c == "accept":
+        ws_id = ws.accept_proposal(conn, args.id, name=args.name)
+        print(f"created workstream #{ws_id} {ws.get(conn, ws_id)['slug']}; its lead sets it up on the next tick")
+        return
+    if c == "decline":
+        ws.reject_proposal(conn, args.id, args.note)
+        print(f"suggestion #{args.id} rejected")
+        return
     if c == "move":
         target = None if args.workstream == "queue" else ws.by_slug(conn, args.workstream)["id"]
         ws.move_item(conn, args.item, target)
@@ -476,6 +488,13 @@ def main(argv=None):
         x = wsub.add_parser(verb, help=help_)
         x.add_argument("workstream", help="slug or id")
         x.add_argument(arg)
+    wsub.add_parser("suggested", help="workstreams the chief of staff suggested, waiting for you")
+    wa = wsub.add_parser("accept", help="create a suggested workstream")
+    wa.add_argument("id", type=int)
+    wa.add_argument("--name", help="a different name")
+    wd = wsub.add_parser("decline", help="reject a suggested workstream")
+    wd.add_argument("id", type=int)
+    wd.add_argument("--note", help="why, so the chief of staff learns")
     wm = wsub.add_parser("move", help="move an item into a workstream, or back to the queue")
     wm.add_argument("item", type=int)
     wm.add_argument("workstream", help="slug or id, or 'queue'")

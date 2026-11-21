@@ -296,6 +296,8 @@ details.panel-box > pre { margin: 0; padding: 12px 14px; border-top: 1px solid v
 /* Workstreams */
 .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red-solid); flex: none; }
 .nav-row .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-tag { margin-left: auto; flex: none; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--blue-bg); color: var(--blue-fg); }
+.proposal-why { font-size: 14px; line-height: 1.5; }
 .nav-row .spinner { width: 12px; height: 12px; margin: 0; color: var(--blue-solid); }
 .ws-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .ws-col { display: grid; gap: 28px; align-content: start; min-width: 0; }
@@ -478,10 +480,11 @@ const state = { route: { page: "queue", id: null }, queue: null, recent: null, r
 
 function parseHash() {
   const [page, id] = location.hash.replace(/^#\/?/, "").split("/");
-  const known = ["queue", "closed", "rules", "runs", "workstreams"].includes(page) || /^ws:\d+$/.test(page || "");
+  const known = ["queue", "closed", "rules", "runs", "workstreams"].includes(page) || /^wsp?:\d+$/.test(page || "");
   return { page: known ? page : "queue", id: id ? Number(id) : null };
 }
 const wsIdOf = page => (page || "").startsWith("ws:") ? Number(page.slice(3)) : null;
+const proposalIdOf = page => (page || "").startsWith("wsp:") ? Number(page.slice(4)) : null;
 function go(page, id = null) { location.hash = `#/${page}${id ? "/" + id : ""}`; }
 
 async function load() {
@@ -533,6 +536,10 @@ function renderChrome() {
       w.running ? el("span", { class: "spinner", "aria-label": "lead working" }) : null,
       w.urgent ? el("span", { class: "nav-dot", title: `${w.urgent} urgent`, "aria-label": `${w.urgent} urgent` }) : null,
       w.needs_review ? el("span", { class: "nav-count" }, w.needs_review) : null)),
+    ...(q.ws_proposals || []).map(p => el("button", {
+      class: "nav-row", "aria-current": state.route.page === `wsp:${p.id}` ? "page" : null, onclick: () => go(`wsp:${p.id}`),
+      title: `Suggested: ${p.name}` },
+      icon("spark"), el("span", { class: "nav-label" }, p.name), el("span", { class: "nav-tag" }, "Suggested"))),
     el("button", { class: "nav-row", "aria-current": state.route.page === "workstreams" ? "page" : null, onclick: () => go("workstreams") },
       icon("plus"), streams.length ? "All workstreams" : "New workstream"));
   const pct = r.today_cost_usd / r.daily_cap_usd;
@@ -725,7 +732,7 @@ function findItem(id) {
 
 function renderSheet() {
   const sheet = document.getElementById("sheet"), backdrop = document.getElementById("backdrop");
-  const it = state.route.id && (["queue", "closed"].includes(state.route.page) || wsIdOf(state.route.page)) ? findItem(state.route.id) : null;
+  const it = state.route.id && (["queue", "closed"].includes(state.route.page) || wsIdOf(state.route.page) || proposalIdOf(state.route.page)) ? findItem(state.route.id) : null;
   if (!it) { sheet.hidden = true; backdrop.hidden = true; return; }
   const url = it.url && safeUrl(it.url);
   const source = url ? sourceLink(it.lead, url) : null;
@@ -1136,6 +1143,49 @@ function renderWorkstreams() {
   ];
 }
 
+// A workstream the chief of staff suggested from related queue items: I can rename it, then create or reject it.
+function renderProposal() {
+  const id = proposalIdOf(state.route.page);
+  const p = (state.queue.ws_proposals || []).find(x => x.id === id);
+  if (!p) return [pageHeader("Suggested workstream", "This suggestion was already created or rejected."),
+    el("button", { class: "btn btn-outline btn-sm", onclick: () => go("workstreams") }, "All workstreams")];
+  const nameKey = `wspName${id}`, descKey = `wspDesc${id}`, noteKey = `wspNote${id}`;
+  if (state.form[nameKey] === undefined) state.form[nameKey] = p.name;
+  if (state.form[descKey] === undefined) state.form[descKey] = p.description;
+  const items = state.queue.items.filter(i => p.item_ids.includes(i.id));
+  const gone = p.item_ids.length - items.length;
+  const accept = async () => {
+    const name = (state.form[nameKey] || "").trim();
+    if (!name) { toast("Give the workstream a name"); return; }
+    const res = await wsPost(`/api/proposals/${id}/accept`, { name, description: state.form[descKey] || "" },
+      "Workstream created. Its lead is setting it up.");
+    if (res) { clearField(nameKey, descKey, noteKey); go(`ws:${res.id}`); }
+  };
+  const reject = async () => {
+    const res = await wsPost(`/api/proposals/${id}/reject`, { note: state.form[noteKey] || "" }, "Suggestion rejected");
+    if (res) { clearField(nameKey, descKey, noteKey); go("queue"); }
+  };
+  return [
+    pageHeader(p.name, `Suggested by the chief of staff ${ago(p.created_at)} from ${p.item_ids.length} queue items`),
+    el("div", { class: "card", style: "margin-bottom:16px" },
+      el("div", { class: "form-grid" },
+        el("div", {}, el("div", { class: "field-label" }, "Why these belong together"), el("div", { class: "proposal-why" }, p.why)),
+        el("div", {}, el("div", { class: "field-label" }, "Name"), field(nameKey)),
+        el("div", {}, el("div", { class: "field-label" }, "What it is, and what done looks like"), field(descKey, {}, "textarea")),
+        el("div", { class: "sheet-actions" },
+          el("button", { class: "btn btn-primary", onclick: accept }, icon("check", 15), "Create workstream"),
+          el("span", { class: "muted", style: "font-size:13px" },
+            "It watches these items' conversations, the items move into it, and its lead drafts a charter.")))),
+    el("div", { class: "card", style: "margin-bottom:16px" },
+      el("div", { class: "form-grid" },
+        el("div", {}, el("div", { class: "field-label" }, el("span", {}, "Not a workstream?"), el("span", {}, "optional: say why, so the chief of staff learns")),
+          field(noteKey, { placeholder: "e.g. these are one-off questions, not a project" })),
+        el("div", { class: "sheet-actions" }, el("button", { class: "btn btn-outline", onclick: reject }, "Reject suggestion")))),
+    items.length ? itemTable(items, { selectable: false }) : null,
+    gone ? el("div", { class: "hint" }, `${gone} of its items closed or moved since the suggestion; they stay where they are.`) : null,
+  ];
+}
+
 function renderWorkstream() {
   const d = state.ws, wsId = wsIdOf(state.route.page);
   if (!d || d.workstream.id !== wsId) return [el("div", { class: "muted" }, "Loading…")];
@@ -1285,7 +1335,7 @@ function wsSettings(d, base) {
 function render() {
   if (!state.queue || !state.runs) return;
   renderChrome();
-  const page = wsIdOf(state.route.page) ? renderWorkstream()
+  const page = wsIdOf(state.route.page) ? renderWorkstream() : proposalIdOf(state.route.page) ? renderProposal()
     : { queue: renderQueue, closed: renderClosed, rules: renderRules, runs: renderRuns, workstreams: renderWorkstreams }[state.route.page]();
   const main = document.getElementById("page");
   const scroll = main.parentElement.scrollTop;

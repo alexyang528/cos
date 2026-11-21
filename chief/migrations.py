@@ -525,6 +525,29 @@ MIGRATIONS: tuple[Migration, ...] = (
             "UPDATE items SET likely_done_at = updated_at WHERE status = 'likely_done'",
         ),
     ),
+    # Workstreams the chief of staff suggests from related queue items. Kept apart from workstreams until I approve
+    # one, so nothing that scans, routes or runs leads ever sees a suggestion. item_ids is a JSON list.
+    Migration(
+        16,
+        "workstreams the chief of staff suggests",
+        (
+            f"""
+            CREATE TABLE ws_proposals (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                why TEXT NOT NULL DEFAULT '',
+                item_ids TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','approved','rejected')),
+                note TEXT,
+                workstream_id INTEGER REFERENCES workstreams(id),
+                run_id INTEGER REFERENCES runs(id),
+                created_at TEXT NOT NULL DEFAULT {NOW},
+                decided_at TEXT
+            )""",
+            "CREATE INDEX ws_proposals_status ON ws_proposals(status)",
+        ),
+    ),
 )
 
 assert [m.version for m in MIGRATIONS] == list(range(1, len(MIGRATIONS) + 1)), "migration versions must be contiguous"
