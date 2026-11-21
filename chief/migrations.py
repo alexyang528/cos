@@ -567,6 +567,32 @@ MIGRATIONS: tuple[Migration, ...] = (
             )""",
         ),
     ),
+    # The chief's findings are about the system, not work for me, so they leave the queue for its own page.
+    # needs_me: a code change, config or recurring failure only I can fix; otherwise the chief fixed it with the
+    # provisional rules in rule_ids. Open findings already in the queue move over; their items close without a
+    # decided_at, so the brain doesn't read the move as me dismissing them.
+    Migration(
+        18,
+        "chief of staff findings move from the queue to system notes",
+        (
+            f"""
+            CREATE TABLE chief_notes (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                needs_me INTEGER NOT NULL DEFAULT 1,
+                rule_ids TEXT NOT NULL DEFAULT '[]',
+                run_id INTEGER REFERENCES runs(id),
+                created_at TEXT NOT NULL DEFAULT {NOW},
+                dismissed_at TEXT
+            )""",
+            "INSERT INTO chief_notes(title, body, run_id, created_at) "
+            "SELECT title, body, created_by_run_id, created_at FROM items WHERE lead = 'chief' "
+            "AND status IN ('pending','likely_done','changes_requested','approved','failed') ORDER BY id",
+            f"UPDATE items SET status = 'dismissed', feedback = 'moved to the chief of staff page', updated_at = {NOW} "
+            "WHERE lead = 'chief' AND status IN ('pending','likely_done','changes_requested','approved','failed')",
+        ),
+    ),
 )
 
 assert [m.version for m in MIGRATIONS] == list(range(1, len(MIGRATIONS) + 1)), "migration versions must be contiguous"

@@ -47,6 +47,28 @@ def recent(conn: sqlite3.Connection, limit: int = 20) -> list[dict]:
     return [{**dict(r), "actions": json.loads(r["actions"] or "[]")} for r in rows]
 
 
+def notes(conn: sqlite3.Connection) -> list[dict]:
+    """System notes I haven't dismissed: ones that need me, and the chief's own fixes from the last two weeks, each
+    with the rules it wrote."""
+    rows = conn.execute(
+        "SELECT * FROM chief_notes WHERE dismissed_at IS NULL AND (needs_me = 1 OR "
+        "created_at > strftime('%Y-%m-%dT%H:%M:%SZ','now','-14 days')) ORDER BY needs_me DESC, id DESC").fetchall()
+    out = []
+    for r in rows:
+        ids = json.loads(r["rule_ids"] or "[]")
+        rules = [dict(x) for x in conn.execute(
+            f"SELECT id, agent, text, status, expires_at FROM rules WHERE id IN ({','.join('?' * len(ids))})",
+            ids)] if ids else []
+        out.append({**dict(r), "rules": rules})
+    return out
+
+
+def dismiss_note(conn: sqlite3.Connection, note_id: int) -> None:
+    if conn.execute(f"UPDATE chief_notes SET dismissed_at = {NOW} WHERE id = ? AND dismissed_at IS NULL",
+                    (note_id,)).rowcount != 1:
+        raise KeyError(f"no open note {note_id}")
+
+
 def runnable(conn: sqlite3.Connection) -> dict[str, str]:
     """Agents the chief may rerun, with what a run does."""
     out = {"intern": "triage events scanned but not yet judged",

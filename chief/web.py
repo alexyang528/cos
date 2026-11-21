@@ -44,6 +44,7 @@ WS_GET = re.compile(r"^/api/workstreams/(\d+)$")
 WS_PATH = re.compile(r"^/api/workstreams/(\d+)/([a-z]+)$")
 SOURCE_PATH = re.compile(r"^/api/sources/(\d+)/(accept|reject|remove)$")
 PROPOSAL_PATH = re.compile(r"^/api/proposals/(\d+)/(accept|reject)$")
+NOTE_PATH = re.compile(r"^/api/notes/(\d+)/dismiss$")
 # Workstreams whose lead this server started and hasn't finished; the page polls while one is running.
 RUNNING: set[int] = set()
 
@@ -183,6 +184,7 @@ def snapshot(conn, include_recent: bool) -> dict:
         "workstreams": [{**w, "running": w["id"] in RUNNING} for w in workstreams.summaries(conn)],
         "ws_proposals": workstreams.pending_proposals(conn),
         "chief_instructions": tell.recent(conn, 15),
+        "chief_notes": tell.notes(conn),
         "workdirs": list(config.SESSION_WORKDIRS),
         "default_workdir": config.DEFAULT_WORKDIR,
         "worktree_by_default": sorted(config.WORKTREE_BY_DEFAULT),
@@ -583,6 +585,16 @@ def make_handler(token: str, port: int):
                 return self._close_likely_done()
             if self.path == "/api/chief":
                 return self._tell_chief()
+            if NOTE_PATH.match(self.path):
+                from . import tell
+                conn = db.open_db()
+                try:
+                    tell.dismiss_note(conn, int(NOTE_PATH.match(self.path).group(1)))
+                    return self._json(HTTPStatus.OK, {"ok": True})
+                except KeyError as e:
+                    return self._json(HTTPStatus.NOT_FOUND, {"error": str(e).strip("'")})
+                finally:
+                    conn.close()
             if PROPOSAL_PATH.match(self.path):
                 return self._proposal(*PROPOSAL_PATH.match(self.path).groups())
             m = ITEM_PATH.match(self.path)

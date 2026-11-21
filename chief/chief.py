@@ -1,9 +1,10 @@
 """Chief of staff: reviews provisional rules, audits the intern's recent routing, flags problems, and suggests
 workstreams for queue items that share an underlying topic.
 
-It can confirm or retire rules and re-route an event the intern wrongly skipped. A workstream it suggests waits in
-the sidebar for me to create or reject. Everything else it finds becomes an fyi item in my queue. It never drafts
-replies and never writes outside the local database.
+It can confirm or retire rules, re-route an event the intern wrongly skipped, and write provisional rules to fix a
+problem it finds. Its findings are system notes on its own page, never queue items: the queue is for what people
+need from me. A workstream it suggests waits in the sidebar for me to create or reject. It never drafts replies and
+never writes outside the local database.
 """
 
 import json
@@ -11,7 +12,7 @@ import sqlite3
 
 from . import config, prompts, store
 from .leads import SOURCE_TO_LEAD
-from .memory import confirm_rule, retire_rule
+from .memory import add_rule, confirm_rule, retire_rule
 from .policy import pass_spec
 from .runner import preview, run_agent
 
@@ -22,7 +23,7 @@ MAX_PROPOSALS_PER_RUN = 3
 def gather(conn: sqlite3.Connection) -> dict:
     rules = [dict(r) for r in conn.execute(
         "SELECT id, agent, text, why, source, source_ref, expires_at FROM rules "
-        "WHERE status = 'provisional' AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ','now')"
+        "WHERE status = 'provisional' AND source != 'chief' AND expires_at > strftime('%Y-%m-%dT%H:%M:%SZ','now')"
     )]
     routing = [dict(r) for r in conn.execute(
         f"SELECT e.id AS event_id, e.source, e.kind, e.author, substr(e.text, 1, 500) AS text, "
@@ -51,6 +52,18 @@ def gather(conn: sqlite3.Connection) -> dict:
     return {"rules": rules, "routing": routing, "failed_runs": runs, "expired_items": expired, "queue_items": queue}
 
 
+def context(conn: sqlite3.Connection) -> dict:
+    """What the chief's findings must not repeat: every active rule (including its own provisional ones, which it
+    doesn't review: they wait for me) and the system notes I haven't dismissed."""
+    return {
+        "active_rules": [dict(r) for r in conn.execute(
+            "SELECT id, agent, text, status, source FROM rules WHERE status IN ('provisional','confirmed') "
+            "ORDER BY id")],
+        "open_notes": [dict(r) for r in conn.execute(
+            "SELECT id, title, created_at FROM chief_notes WHERE dismissed_at IS NULL AND needs_me = 1 ORDER BY id")],
+    }
+
+
 def workstream_context(conn: sqlite3.Connection) -> dict:
     """What a workstream suggestion must not repeat: workstreams that exist, and suggestions already made."""
     return {
@@ -62,9 +75,10 @@ def workstream_context(conn: sqlite3.Connection) -> dict:
     }
 
 
-def build_prompt(data: dict, ws_context: dict | None = None) -> str:
+def build_prompt(data: dict, ws_context: dict | None = None, ctx: dict | None = None) -> str:
     me = config.ME_NAME
     ws_context = ws_context or {"workstreams": [], "suggestions": []}
+    ctx = ctx or {"active_rules": [], "open_notes": []}
     return f"""{prompts.SAFETY}
 You are the chief of staff in {me}'s agent system. You supervise the other agents; you do not draft replies.
 
@@ -76,15 +90,24 @@ You are the chief of staff in {me}'s agent system. You supervise the other agent
    from {me} is still required: if {me} never responds, the sender would follow up and ask again. Find skips
    that meet that bar (an unanswered question or request to {me}, a review or decision only {me} can give,
    someone blocked on {me}) and re-route only clear misses. An answer to {me}'s own question that asks
-   nothing back, an FYI, a status update or a cc does not meet it. Report routes that fell below the bar only
-   when they share a cause {me} could fix (a rule that fires too broadly, a scanner bug, a misread identity),
+   nothing back, an FYI, a status update or a cc does not meet it. Make a finding of routes that fell below
+   the bar only when they share a cause (a rule that fires too broadly, a scanner bug, a misread identity),
    and name the cause. Don't list one-off routes that a lead already dropped (lead_outcome "dropped: ...").
-3. Failed runs: summarize anything {me} should fix, as findings.
+3. Failed runs: a finding only when something needs fixing: a run that fails the same way repeatedly, or an
+   error that points at a prompt or code problem. A one-off network error or timeout needs none.
 4. Expired items: queued items {me} never touched for {config.EXPIRE_AFTER_DAYS} days, so they closed on their
    own. Treat them as items that weren't worth raising. When several share a cause (the same channel, requester,
-   event kind, lead or kind of ask), say what it is and what would stop it as one finding: a narrower intern
-   rule, a lead dropping that kind of route. Use them as evidence in the routing audit and rule reviews too: a
-   provisional rule that keeps such routes coming should be retired. One expiry alone needs no finding.
+   event kind, lead or kind of ask), make one finding of it. Use them as evidence in the routing audit and rule
+   reviews too: a provisional rule that keeps such routes coming should be retired. One expiry alone needs no
+   finding.
+
+Findings never go to {me}'s queue; they are notes about the system, on your own page. Fix what you can:
+- When a rule for the intern, a lead or a workstream lead would stop the problem, write it in the finding's
+  "rules" and set needs_me false. Your rules start provisional: they apply at once and expire in 7 days unless
+  {me} confirms them, so make each one specific to the cause you found. Don't repeat an active rule.
+- Set needs_me true only for what a rule can't fix: a scanner or code bug, a prompt or output-format problem,
+  a connector or config issue, a failure that keeps recurring. Say what to change, and where.
+- Don't repeat an open note below; at most 5 findings, usually 0 to 2.
 5. Workstream suggestions: a workstream is a long-running project {me} leads, with its own lead agent that
    watches its conversations and tracks where it stands. Look at the open queue items (queue_items) for two or
    more that are really about the same underlying topic, project or discussion: the same feature, incident,
@@ -103,15 +126,18 @@ You are the chief of staff in {me}'s agent system. You supervise the other agent
 Output schema:
 {{"rule_reviews": [{{"rule_id": 1, "verdict": "confirm" | "retire" | "leave", "reason": "..."}}],
  "reroutes": [{{"event_id": 12, "summary": "one line, who wants what", "reason": "why the skip was wrong"}}],
- "findings": [{{"title": "...", "body": "...", "priority": 2}}],
+ "findings": [{{"title": "...", "body": "what you found, with event, route and item ids",
+   "rules": [{{"agent": "intern", "text": "...", "why": "..."}}], "needs_me": false}}],
  "workstreams": [{{"name": "...", "description": "...", "item_ids": [3, 9], "why": "..."}}]}}
-Findings are fyi items (P2).
 
 Data:
 {prompts.untrusted("system-state", data)}
 
 Existing workstreams and earlier suggestions (rejected ones carry {me}'s note):
 {prompts.untrusted("workstreams", ws_context)}
+
+Active rules and open system notes (don't repeat either):
+{prompts.untrusted("rules-and-notes", ctx)}
 """
 
 
@@ -121,7 +147,7 @@ def run(conn: sqlite3.Connection, *, dry_run: bool = False) -> None:
         print("chief: nothing to review (no model call)")
         return
     spec = pass_spec("chief")
-    prompt = build_prompt(data, workstream_context(conn))
+    prompt = build_prompt(data, workstream_context(conn), context(conn))
     if dry_run:
         print(preview(spec, prompt))
         return
@@ -163,14 +189,27 @@ def run(conn: sqlite3.Connection, *, dry_run: bool = False) -> None:
         )
         rerouted.append(ev["event_id"])
 
-    findings = []
+    notes, fixes, problems = [], [], []
     for f in (result.data.get("findings") or [])[:5]:
-        findings.append(store.add_item(
-            conn, lead="chief", kind="fyi", title=str(f.get("title") or "Chief of staff finding")[:200],
-            body=str(f.get("body") or ""), priority=f.get("priority", 2), run_id=result.run_id,
-        ))
+        if not isinstance(f, dict):
+            continue
+        rule_ids = []
+        for r in (f.get("rules") or [])[:3]:
+            try:
+                rule_ids.append(add_rule(conn, agent=str(r.get("agent") or ""), text=str(r.get("text") or ""),
+                                         why=str(r.get("why") or ""), source="chief",
+                                         source_ref=f"run:{result.run_id}"))
+            except (ValueError, AttributeError) as e:
+                problems.append(f"rule for {f.get('title')!r}: {e}")
+        # A finding it meant to fix with rules still needs me if none of those rules could be added.
+        needs_me = bool(f.get("needs_me")) or not rule_ids
+        notes.append(conn.execute(
+            "INSERT INTO chief_notes(title, body, needs_me, rule_ids, run_id) VALUES (?, ?, ?, ?, ?)",
+            (str(f.get("title") or "Finding")[:200], str(f.get("body") or "")[:4000], int(needs_me),
+             json.dumps(rule_ids), result.run_id)).lastrowid)
+        fixes += rule_ids
     from . import workstreams as ws
-    suggested, problems = [], []
+    suggested = []
     for s in (result.data.get("workstreams") or [])[:MAX_PROPOSALS_PER_RUN]:
         try:
             suggested.append(ws.propose(conn, s.get("name"), s.get("description"), s.get("why"),
@@ -178,7 +217,7 @@ def run(conn: sqlite3.Connection, *, dry_run: bool = False) -> None:
         except (ValueError, AttributeError) as e:
             problems.append(f"workstream suggestion {s.get('name') if isinstance(s, dict) else s!r}: {e}")
     print(f"chief: rules confirmed {confirmed}, retired {retired}; re-routed events {rerouted}; "
-          f"findings queued {findings}; workstreams suggested {suggested} "
+          f"notes {notes}, provisional rules {fixes}; workstreams suggested {suggested} "
           f"(run {result.run_id}, ${result.cost_usd:.3f})")
     for p in problems:
         print(f"  rejected: {p}")

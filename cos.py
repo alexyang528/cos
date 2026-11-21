@@ -25,6 +25,19 @@ def cmd_tell(args):
         print(f"\n{i['response'] or ''}\n" + "".join(f"- {a}\n" for a in i["actions"]))
 
 
+def cmd_notes(args):
+    from chief import tell
+    conn = db.open_db()
+    if args.dismiss:
+        tell.dismiss_note(conn, args.dismiss)
+        print(f"note #{args.dismiss} dismissed")
+        return
+    for n in tell.notes(conn):
+        print(f"#{n['id']:<4} {'NEEDS YOU' if n['needs_me'] else 'fixed':<9} {n['created_at'][:10]}  {n['title']}")
+        for r in n["rules"]:
+            print(f"      rule #{r['id']} ({r['status']}, {r['agent']}): {r['text']}")
+
+
 def cmd_brain(args):
     from chief import memory
     memory.distill(db.open_db(), dry_run=args.dry_run)
@@ -427,6 +440,9 @@ def main(argv=None):
     te.add_argument("text", nargs="?", help="the instruction (omit to answer ones already waiting)")
     te.add_argument("--dry-run", action="store_true", help=dry)
     te.set_defaults(fn=cmd_tell)
+    no = sub.add_parser("notes", help="the chief of staff's notes about the system, and the rules it wrote")
+    no.add_argument("--dismiss", type=int, metavar="ID")
+    no.set_defaults(fn=cmd_notes)
     br = sub.add_parser("brain", help="distill preferences from your queue decisions into brain.md")
     br.add_argument("--dry-run", action="store_true", help=dry)
     br.set_defaults(fn=cmd_brain)

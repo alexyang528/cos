@@ -302,6 +302,8 @@ details.panel-box > pre { margin: 0; padding: 12px 14px; border-top: 1px solid v
 .tell-ask { font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tell-reply { margin-top: 10px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
 .tell-actions { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted-foreground); }
+.note-body { font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; }
+.note-rule { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
 .nav-row .spinner { width: 12px; height: 12px; margin: 0; color: var(--blue-solid); }
 .ws-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .ws-col { display: grid; gap: 28px; align-content: start; min-width: 0; }
@@ -524,7 +526,7 @@ function renderChrome() {
   const nav = [
     ["queue", "Queue", "inbox", count(NEEDS_REVIEW)],
     ["closed", "Recently closed", "archive", null],
-    ["chief", "Chief of staff", "spark", (q.chief_instructions || []).filter(i => !i.finished_at).length || null],
+    ["chief", "Chief of staff", "spark", (q.chief_notes || []).filter(n => n.needs_me).length || null],
     ["rules", "Rules", "book", q.rules.filter(x => x.status === "provisional").length || null],
     ["runs", "Runs & costs", "activity", r.summary.reduce((n, s) => n + (s.last_status === "error" ? 1 : 0), 0) || null],
   ];
@@ -1121,8 +1123,25 @@ function renderChief() {
   };
   const box = field("tell", { placeholder: "e.g. The Slack lead missed this thread, track it: https://…  ·  Add a rule: never queue #random  ·  Rerun the GitHub lead" }, "textarea");
   box.addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } });
+  const notes = state.queue.chief_notes || [];
+  const needs = notes.filter(n => n.needs_me), fixed = notes.filter(n => !n.needs_me);
+  const dismiss = n => wsPost(`/api/notes/${n.id}/dismiss`, {}, "Dismissed");
+  const noteCard = n => el("div", { class: "card" },
+    el("div", { class: "row-sub" }, ago(n.created_at)),
+    el("div", { class: "tell-ask" }, n.title),
+    el("div", { class: "note-body" }, n.body),
+    n.rules.map(r => el("div", { class: "note-rule" },
+      badge(r.status === "confirmed" ? ["Confirmed", "green"] : r.status === "provisional" ? ["Provisional", "yellow"] : [r.status, "gray"]),
+      el("span", {}, `Rule #${r.id} for ${r.agent}: ${r.text}`),
+      r.status === "provisional" ? el("button", { class: "btn btn-outline btn-xs", onclick: () => ruleAction(r, "confirm") }, "Confirm") : null,
+      ["provisional", "confirmed"].includes(r.status) ? el("button", { class: "btn btn-ghost btn-xs", onclick: () => ruleAction(r, "retire") }, "Retire") : null)),
+    el("div", { class: "sheet-actions", style: "margin-top:10px" }, el("button", { class: "btn btn-ghost btn-sm", onclick: () => dismiss(n) }, "Dismiss")));
+  const section = (title, sub, cards) => cards.length ? el("section", { class: "pane-section", style: "margin-bottom:20px" },
+    el("h3", { class: "pane-label" }, title), el("div", { class: "pane-hint" }, sub), el("div", { class: "tell-list" }, cards)) : null;
   return [
     pageHeader("Chief of staff", "Tell it what you want: track a conversation the system missed (it also works out why, and fixes the rules), add or retire a rule, or rerun an agent."),
+    section("Needs you", "Problems in the system a rule can't fix: scanner or code bugs, config, recurring failures.", needs.map(noteCard)),
+    section("Fixed on its own", "Problems it fixed with provisional rules. They expire in 7 days unless you confirm them.", fixed.map(noteCard)),
     el("div", { class: "card", style: "margin-bottom:16px" },
       el("div", { class: "form-grid" }, box,
         el("div", { class: "sheet-actions" },
