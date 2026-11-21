@@ -1393,7 +1393,8 @@ function render() {
     : { queue: renderQueue, closed: renderClosed, chief: renderChief, rules: renderRules, runs: renderRuns, workstreams: renderWorkstreams }[state.route.page]();
   const main = document.getElementById("page");
   const scroll = main.parentElement.scrollTop;
-  main.replaceChildren(...page);
+  // Pages leave out empty sections as null, the way el() children do; replaceChildren would print them as "null".
+  main.replaceChildren(...page.flat().filter(c => c !== null && c !== undefined && c !== false));
   main.parentElement.scrollTop = scroll;
   renderSheet();
 }
