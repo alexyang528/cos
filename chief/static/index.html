@@ -457,6 +457,8 @@ const STATUS = {
 const RUN_STATUS = { ok: ["OK", "green"], error: ["Error", "red"], running: ["Running", "blue"], dry_run: ["Dry run", "gray"] };
 // Escalated items (priority 0) get a red dot and sort first; everything else is normal.
 const isEscalated = it => it.priority === 0;
+// What an item is called everywhere: the lead's one-line ask, or its title for items from before asks existed.
+const itemName = it => it.ask || it.title;
 const badge = ([label, tone]) => el("span", { class: `badge tone-${tone}` }, label);
 const statusBadge = s => badge(STATUS[s] || [s, "gray"]);
 // Waiting and likely-done items count down once the server says they're within the warning window (expires_at is
@@ -602,8 +604,8 @@ function itemTable(items, { selectable }) {
     const tr = el("tr", { class: "clickable" + (selectable && idx === state.sel ? " selected" : "") + (state.route.id === it.id ? " current" : ""),
       onclick: () => go(state.route.page, it.id) },
       el("td", {}, el("div", { class: "item-cell" }, sourceMark(sourceOf(it)), el("div", {},
-        el("div", { class: "cell-title" }, isEscalated(it) ? el("span", { class: "esc-dot", title: "Escalated", "aria-label": "Escalated" }) : null, it.title),
-        el("div", { class: "cell-sub" }, `#${it.id} · ${it.lead} · ${it.kind}${it.action ? " · " + it.action.type.replace(/_/g, " ") : ""}`
+        el("div", { class: "cell-title" }, isEscalated(it) ? el("span", { class: "esc-dot", title: "Escalated", "aria-label": "Escalated" }) : null, itemName(it)),
+        el("div", { class: "cell-sub" }, `${it.requester ? it.requester + " · " : ""}#${it.id} · ${it.lead} · ${it.kind}${it.action ? " · " + it.action.type.replace(/_/g, " ") : ""}`
           + (it.prompt && !it.launched_at ? " · agent prompt" : "")
           + (it.sessions?.length ? ` · ${it.sessions.length} Claude session${it.sessions.length > 1 ? "s" : ""}` : ""))))),
       showWs ? wsCell(it) : null,
@@ -756,7 +758,7 @@ function renderSheet() {
         sep(), el("span", {}, it.source_label || it.lead), sep(), el("span", {}, ago(it.created_at)),
         status ? [sep(), el("span", {}, status)] : null,
         el("button", { class: "pane-close", "aria-label": "Close", onclick: closeSheet }, icon("x", 16))),
-      el("h2", { class: "pane-title", id: "sheetTitle" }, it.ask || it.title),
+      el("h2", { class: "pane-title", id: "sheetTitle" }, itemName(it)),
       sub ? el("div", { class: "pane-sub" }, sub) : null,
       source ? el("a", { class: "btn btn-outline pane-source", href: source.href, target: "_blank", rel: "noopener noreferrer" },
         source.label, icon("external", 13)) : null),
