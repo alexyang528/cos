@@ -293,13 +293,18 @@ def make_handler(token: str, port: int):
                     self._send(HTTPStatus.OK, png, "image/png")
                 else:
                     self._json(HTTPStatus.NOT_FOUND, {"error": "no icon"})
-            elif self.path.startswith("/api/queue") or self.path == "/api/runs" or WS_GET.match(self.path):
+            elif self.path.startswith("/api/queue") or self.path in ("/api/runs", "/api/sessions") \
+                    or WS_GET.match(self.path):
                 if not secrets.compare_digest(self.headers.get("X-COS-Token", ""), token):
                     return self._json(HTTPStatus.FORBIDDEN, {"error": "bad token"})
                 conn = db.open_db()
                 try:
                     if self.path == "/api/runs":
                         self._json(HTTPStatus.OK, runs_snapshot(conn))
+                    elif self.path == "/api/sessions":
+                        from . import sessions
+                        sessions.index(conn)  # cheap when nothing changed; picks up sessions since the last tick
+                        self._json(HTTPStatus.OK, {"sessions": sessions.all_sessions(conn)})
                     elif WS_GET.match(self.path):
                         self._json(HTTPStatus.OK, workstream_snapshot(conn, int(WS_GET.match(self.path).group(1))))
                     else:

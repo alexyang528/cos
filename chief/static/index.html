@@ -302,6 +302,10 @@ details.panel-box > pre { margin: 0; padding: 12px 14px; border-top: 1px solid v
 .nav-tag { margin-left: auto; flex: none; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--blue-bg); color: var(--blue-fg); }
 .proposal-why { font-size: 14px; line-height: 1.5; }
 .tell-list { display: flex; flex-direction: column; gap: 12px; }
+.sessions-card { padding: 4px 0; margin-bottom: 18px; }
+.session-links { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+.session-links a { color: var(--muted-foreground); text-decoration: none; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-links a:hover { color: var(--foreground); text-decoration: underline; }
 .tell-ask { font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tell-reply { margin-top: 10px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
 .tell-actions { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted-foreground); }
@@ -490,7 +494,7 @@ const state = { route: { page: "queue", id: null }, queue: null, recent: null, r
 
 function parseHash() {
   const [page, id] = location.hash.replace(/^#\/?/, "").split("/");
-  const known = ["queue", "closed", "chief", "rules", "runs", "workstreams"].includes(page) || /^wsp?:\d+$/.test(page || "");
+  const known = ["queue", "closed", "chief", "rules", "runs", "sessions", "workstreams"].includes(page) || /^wsp?:\d+$/.test(page || "");
   return { page: known ? page : "queue", id: id ? Number(id) : null };
 }
 const wsIdOf = page => (page || "").startsWith("ws:") ? Number(page.slice(3)) : null;
@@ -500,9 +504,10 @@ function go(page, id = null) { location.hash = `#/${page}${id ? "/" + id : ""}`;
 async function load() {
   try {
     const wsId = wsIdOf(state.route.page);
-    const [queue, runs, ws] = await Promise.all([api("/api/queue" + (state.route.page === "closed" ? "?recent=1" : "")), api("/api/runs"),
-      wsId ? api(`/api/workstreams/${wsId}`) : null]);
+    const [queue, runs, ws, sess] = await Promise.all([api("/api/queue" + (state.route.page === "closed" ? "?recent=1" : "")), api("/api/runs"),
+      wsId ? api(`/api/workstreams/${wsId}`) : null, state.route.page === "sessions" ? api("/api/sessions") : null]);
     state.queue = queue; state.runs = runs; state.ws = ws;
+    if (sess) state.sessions = sess.sessions;
     if (ws && state.wsWasRunning && !ws.running) toast(`The ${ws.workstream.name} lead finished`);
     state.wsWasRunning = !!(ws && ws.running);
     render();
@@ -540,6 +545,9 @@ function renderChrome() {
     ...nav.map(([page, label, ic, n]) => el("button", {
       class: "nav-row", "aria-current": state.route.page === page ? "page" : null, onclick: () => go(page) },
       icon(ic), label, n ? el("span", { class: "nav-count" }, n) : null)),
+    el("div", { class: "nav-group" }, "Claude"),
+    el("button", { class: "nav-row", "aria-current": state.route.page === "sessions" ? "page" : null, onclick: () => go("sessions") },
+      icon("terminal"), "Sessions"),
     el("div", { class: "nav-group" }, "Workstreams"),
     ...streams.map(w => el("button", {
       class: "nav-row", "aria-current": state.route.page === `ws:${w.id}` ? "page" : null, onclick: () => go(`ws:${w.id}`),
@@ -908,7 +916,7 @@ function appIcon(key, size = 16) {
   return img;
 }
 
-function sessionRow(s, onUnlink) {
+function sessionRow(s, onUnlink = null, links = null) {
   const repo = (s.cwd || "").split("/").filter(Boolean).pop();
   const target = resumeTarget();
   const resume = el("button", { class: "btn btn-ghost btn-sm session-resume", "aria-label": `Resume ${s.title} in ${target.label}`,
@@ -944,13 +952,14 @@ function sessionRow(s, onUnlink) {
     icon("terminal", 16),
     el("div", { class: "session-main" },
       el("div", { class: "session-name", title: s.title }, s.title),
-      el("div", { class: "session-meta" }, [repo, `active ${ago(s.last_at)}`].filter(Boolean).join(" · "))),
+      el("div", { class: "session-meta" }, [repo, onUnlink ? null : s.branch, `active ${ago(s.last_at)}`].filter(Boolean).join(" · ")),
+      links),
     el("div", { class: "resume-split" }, resume, picker),
     el("details", { class: "row-menu" },
       el("summary", { "aria-label": "More actions" }, icon("more", 16)),
       el("div", { class: "row-menu-pop" },
         el("button", { onclick: e => { closeMenu(e); copyText(s.resume, "Resume command copied"); } }, "Copy resume command"),
-        el("button", { title: "Not related; it won't be linked again", onclick: onUnlink }, "Unlink"))));
+        onUnlink ? el("button", { title: "Not related; it won't be linked again", onclick: onUnlink }, "Unlink") : null)));
 }
 async function copyText(text, done) {
   try { await navigator.clipboard.writeText(text); toast(done); } catch { toast("Couldn't copy; select the command instead"); }
@@ -1130,6 +1139,47 @@ async function wsPost(path, body = {}, done = null) {
     await load();
     return res;
   } catch (e) { toast(e.message); return null; }
+}
+
+// Every Claude Code session I ran, newest first and grouped by day, each with Resume and what it's linked to.
+function renderSessions() {
+  const all = state.sessions;
+  if (!all) return [pageHeader("Sessions", "Loading your Claude Code sessions…")];
+  const q = (state.form.sessionSearch || "").trim().toLowerCase();
+  const hay = s => [s.title, s.cwd, s.branch, ...s.items.map(i => `#${i.id} ${i.name}`), ...s.workstreams.map(w => w.name)].join(" ").toLowerCase();
+  const shown = q ? all.filter(s => hay(s).includes(q)) : all;
+  const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = day(new Date());
+  const groupOf = s => {
+    const diff = Math.round((today - day(new Date(s.last_at))) / 86400000);
+    return diff <= 0 ? "Today" : diff === 1 ? "Yesterday" : diff < 7 ? "Earlier this week" : diff < 31 ? "Earlier this month" : "Older";
+  };
+  const groups = [];
+  for (const s of shown) {
+    const g = groupOf(s);
+    if (!groups.length || groups[groups.length - 1][0] !== g) groups.push([g, []]);
+    groups[groups.length - 1][1].push(s);
+  }
+  const links = s => (s.items.length || s.workstreams.length) ? el("div", { class: "session-links" },
+    s.workstreams.map(w => el("a", { href: `#/ws:${w.id}`, title: w.name }, w.name)),
+    s.items.map(i => el("a", { href: `#/${["done", "rejected", "dismissed", "expired"].includes(i.status) ? "closed" : "queue"}/${i.id}`, title: i.name }, `#${i.id} ${i.name}`))) : null;
+  const search = field("sessionSearch", { id: "sessionSearch", placeholder: "Search sessions, folders, branches, linked items", "aria-label": "Search sessions" });
+  // Filtering re-renders the page, which replaces this box; put the cursor back where it was.
+  search.addEventListener("input", () => {
+    const at = search.selectionStart;
+    render();
+    const box = document.getElementById("sessionSearch");
+    if (box) { box.focus(); box.setSelectionRange(at, at); }
+  });
+  return [
+    pageHeader("Sessions", `${all.length} Claude Code sessions, newest first. Resume opens one where you pick.`),
+    el("div", { class: "toolbar" }, search),
+    shown.length ? groups.map(([g, list]) => el("section", {},
+      el("h3", { class: "pane-label", style: "margin:0 0 8px" }, g),
+      el("div", { class: "card sessions-card" }, list.map(s => sessionRow(s, null, links(s))))))
+      : el("div", { class: "table-card" }, emptyState("terminal", q ? "No matches" : "No sessions yet",
+          q ? "Nothing matches that search." : "Claude Code sessions you run show up here.")),
+  ];
 }
 
 // Talking to the chief of staff: what I asked, what it said, and what it actually did (recorded by the server).
@@ -1410,7 +1460,7 @@ function render() {
   if (!state.queue || !state.runs) return;
   renderChrome();
   const page = wsIdOf(state.route.page) ? renderWorkstream() : proposalIdOf(state.route.page) ? renderProposal()
-    : { queue: renderQueue, closed: renderClosed, chief: renderChief, rules: renderRules, runs: renderRuns, workstreams: renderWorkstreams }[state.route.page]();
+    : { queue: renderQueue, closed: renderClosed, chief: renderChief, sessions: renderSessions, rules: renderRules, runs: renderRuns, workstreams: renderWorkstreams }[state.route.page]();
   const main = document.getElementById("page");
   const scroll = main.parentElement.scrollTop;
   // Pages leave out empty sections as null, the way el() children do; replaceChildren would print them as "null".

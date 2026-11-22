@@ -370,6 +370,37 @@ def links_for(conn: sqlite3.Connection, item_ids: list[int]) -> dict[int, list[d
     return out
 
 
+def all_sessions(conn: sqlite3.Connection, limit: int = 300) -> list[dict]:
+    """Every Claude Code session I ran, newest first, with the items and workstreams it is linked to. Unlike
+    linking, this keeps sessions in this repo; it leaves out only this system's own headless runs. Those are
+    known by the preamble every agent prompt opens with: run from an Orca or other terminal they don't carry the
+    sdk-cli entrypoint, and runs against a scratch database (COS_HOME) aren't in this runs table."""
+    agent_opening = "[" + json.dumps(prompts.SAFETY.split("\n", 1)[0])[:-1] + "%"
+    rows = conn.execute(
+        "SELECT * FROM claude_sessions WHERE prompt_count > 0 AND COALESCE(entrypoint, '') != 'sdk-cli' "
+        "AND opening_prompts NOT LIKE ? AND id NOT IN (SELECT session_id FROM runs WHERE session_id IS NOT NULL) "
+        "ORDER BY last_at DESC LIMIT ?", (agent_opening, limit)).fetchall()
+    ids = [r["id"] for r in rows]
+    items: dict[str, list[dict]] = {}
+    streams: dict[str, list[dict]] = {}
+    if ids:
+        marks = ",".join("?" * len(ids))
+        for r in conn.execute(
+                f"SELECT l.session_id, i.id, COALESCE(i.ask, i.title) AS name, i.status FROM item_sessions l "
+                f"JOIN items i ON i.id = l.item_id WHERE l.removed_at IS NULL AND l.session_id IN ({marks}) "
+                f"ORDER BY i.id", ids):
+            items.setdefault(r["session_id"], []).append({"id": r["id"], "name": r["name"], "status": r["status"]})
+        for r in conn.execute(
+                f"SELECT l.session_id, w.id, w.name FROM ws_sessions l JOIN workstreams w ON w.id = l.workstream_id "
+                f"WHERE l.removed_at IS NULL AND w.status != 'archived' AND l.session_id IN ({marks})", ids):
+            streams.setdefault(r["session_id"], []).append({"id": r["id"], "name": r["name"]})
+    return [{"session_id": r["id"], "title": r["title"], "cwd": r["cwd"], "branch": r["git_branch"],
+             "entrypoint": r["entrypoint"], "started_at": r["started_at"], "last_at": r["last_at"],
+             "prompts": r["prompt_count"], "prs": json.loads(r["prs"] or "[]"),
+             "resume": resume_command(r["cwd"], r["id"]),
+             "items": items.get(r["id"], []), "workstreams": streams.get(r["id"], [])} for r in rows]
+
+
 def unlink(conn: sqlite3.Connection, item_id: int, session_id: str) -> bool:
     cur = conn.execute(
         "UPDATE item_sessions SET removed_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') "
