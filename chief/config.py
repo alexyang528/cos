@@ -43,6 +43,12 @@ WORKTREE_IDLE_DAYS = 7
 # Overlap between scans; duplicates are dropped by UNIQUE(source, source_id).
 SCAN_OVERLAP_S = 600
 
+# Switchboard: each scan lists only plans involving me (owner, lead, or an open thread) and skips one whose turn and
+# phase haven't changed since it was read within SWITCHBOARD_RECHECK_H. Every SWITCHBOARD_SWEEP_H a scan lists every
+# open plan instead, to find ones where I'm only the approver or own a lane.
+SWITCHBOARD_RECHECK_H = 3
+SWITCHBOARD_SWEEP_H = 6
+
 # Granola: each scan looks back this far (events dedupe by meeting id), and a note is left alone until it
 # has been unchanged this long, so the lead reads the finished AI summary rather than one still generating.
 GRANOLA_LOOKBACK_DAYS = 2
@@ -72,6 +78,9 @@ SESSION_LOOKBACK_DAYS = 30
 SESSION_LINK_BATCH = 30
 # A new item is first checked against this recent window (plus older sessions that link its source).
 SESSION_FIRST_CHECK_DAYS = 7
+# A session whose prompts link an item's conversation (or a workstream's watched thread or plan) is linked by code
+# every tick. The model pass that judges the rest runs at most this often: links are useful, not urgent.
+SESSION_LINK_EVERY_H = 3
 
 # Workstreams. Their leads share the daily cap but may spend at most WS_DAILY_BUDGET_USD of it, and run after
 # the surface leads in each tick so the queue is never starved.

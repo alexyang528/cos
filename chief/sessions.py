@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import config, paths, prompts
+from . import config, paths, prompts, store
 from .policy import pass_spec
 from .runner import preview, run_agent
 from .store import OPEN_STATUSES
@@ -172,6 +172,9 @@ def index(conn: sqlite3.Connection) -> tuple[int, int]:
 
 
 LAUNCHED_WHY = "Started from this item"
+SOURCE_WHY = "Its prompts link this item's conversation"
+WS_SOURCE_WHY = "Its prompts link a thread or plan this workstream watches"
+MODEL_LINKED_KEY = "sessions.link.model_at"
 
 
 def _link_launched(conn: sqlite3.Connection, sid: str, opening_prompts: list[str]) -> None:
@@ -217,13 +220,47 @@ def _candidates(items, sessions, seen, now: datetime) -> dict[int, list[sqlite3.
     return out
 
 
+def link_by_source(conn: sqlite3.Connection, items, sessions) -> list[str]:
+    """Links that need no judgment: a session whose prompts contain an item's own Slack thread, Switchboard plan
+    or PR, or the exact thread or plan a workstream watches. A link I removed stays removed (the insert is
+    ignored). A watched channel isn't enough: a session can link one message in it and be about something else."""
+    from . import ws_sessions
+    made = []
+    refs_of = {s["id"]: set(json.loads(s["refs"])) for s in sessions}
+    for it in items:
+        refs = item_refs(it["url"], json.loads(it["payload"]) if it["payload"] else None)
+        if not refs:
+            continue
+        for s in sessions:
+            if refs & refs_of[s["id"]] and conn.execute(
+                    "INSERT OR IGNORE INTO item_sessions(item_id, session_id, why) VALUES (?, ?, ?)",
+                    (it["id"], s["id"], SOURCE_WHY)).rowcount:
+                made.append(f"#{it['id']}->{s['title'][:40]!r}")
+                if it["workstream_id"]:
+                    ws_sessions.link(conn, it["workstream_id"], s["id"], SOURCE_WHY, None)
+    exact = {w["id"]: ws_sessions.source_refs(conn, w["id"])[0]
+             for w in conn.execute("SELECT id FROM workstreams WHERE status = 'active'")}
+    for s in sessions:
+        hits = [wid for wid, keys in exact.items() if keys & refs_of[s["id"]]]
+        # A session belongs to at most one workstream; one touching two is left for the model to judge.
+        if len(hits) == 1 and ws_sessions.link(conn, hits[0], s["id"], WS_SOURCE_WHY, None):
+            made.append(f"ws {hits[0]}->{s['title'][:40]!r}")
+    return made
+
+
+def model_due(conn: sqlite3.Connection, now: datetime) -> bool:
+    last = store.kv_get(conn, MODEL_LINKED_KEY)
+    return not last or datetime.fromisoformat(last) <= now - timedelta(hours=config.SESSION_LINK_EVERY_H)
+
+
 def _window_start(item, now: datetime) -> str:
     return item["sessions_checked_at"] or _iso(now - timedelta(days=config.SESSION_FIRST_CHECK_DAYS))
 
 
-def link(conn: sqlite3.Connection, *, dry_run: bool = False) -> None:
-    """One pass for every lead's open items and every active workstream: decide which recently active sessions
-    belong to which item, and which to which workstream."""
+def link(conn: sqlite3.Connection, *, dry_run: bool = False, force: bool = False) -> None:
+    """Link sessions to every lead's open items and every active workstream. Sure links (a session that links the
+    item's own conversation) are made by code on every call; the model pass that judges the rest runs at most
+    every SESSION_LINK_EVERY_H, or whenever force is set."""
     from . import ws_sessions
     leads = tuple(config.ENABLED_LEADS)
     items = conn.execute(
@@ -248,6 +285,12 @@ def link(conn: sqlite3.Connection, *, dry_run: bool = False) -> None:
         "SELECT * FROM claude_sessions WHERE skipped = 0 AND last_at > ? AND last_at <= ? ORDER BY last_at DESC",
         (oldest, settled),
     ).fetchall()
+    sure = [] if dry_run else link_by_source(conn, items, sessions)
+    if sure:
+        print(f"sessions: linked by source {sure}")
+    if not force and not dry_run and not model_due(conn, now):
+        print(f"sessions: model pass not due (every {config.SESSION_LINK_EVERY_H}h; no model call)")
+        return
     ids = [i["id"] for i in items]
     seen = {(r[0], r[1]) for r in conn.execute(
         f"SELECT item_id, session_id FROM item_sessions WHERE item_id IN ({','.join('?' * len(ids))})", ids)} if ids else set()
@@ -324,6 +367,7 @@ Claude Code sessions (newest first):
         print(preview(spec, prompt))
         return
     result = run_agent(conn, spec, prompt, job="lead", lead="sessions")
+    store.kv_set(conn, MODEL_LINKED_KEY, _iso(now))
     if not result.ok:
         print(f"sessions failed (run {result.run_id}, ${result.cost_usd:.3f}): {result.error}")
         return

@@ -182,7 +182,7 @@ def pass_spec(pass_name: str, lead: str | None = None, action: str | None = None
     if pass_name == "brain":
         return PassSpec("brain", "opus", 1.00, _reads("local"), _work_deny())
     if pass_name == "link":
-        return PassSpec("link", "sonnet", 1.50, _reads(*WORK_SURFACES), _work_deny())
+        return PassSpec("link", "haiku", 1.50, _reads(*WORK_SURFACES), _work_deny())
     if pass_name == "chief":
         return PassSpec("chief", "opus", 2.00, _reads(*WORK_SURFACES), _work_deny())
     if pass_name == "lead":

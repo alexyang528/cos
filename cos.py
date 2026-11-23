@@ -117,7 +117,7 @@ def cmd_sessions(args):
         print(f"sessions: re-read {changed} transcripts, {live} linkable")
     elif args.scmd == "link":
         sessions.index(conn)
-        sessions.link(conn, dry_run=args.dry_run)
+        sessions.link(conn, dry_run=args.dry_run, force=True)
     elif args.scmd == "links":
         for item_id, links in sorted(sessions.links_for(conn, [args.id]).items()):
             for s in links:
@@ -504,7 +504,7 @@ def main(argv=None):
     ss = sub.add_parser("sessions", help="index Claude Code sessions and link them to queue items")
     sssub = ss.add_subparsers(dest="scmd", required=True)
     sssub.add_parser("index", help="re-read changed transcripts (no model call)")
-    sl = sssub.add_parser("link", help="link recent sessions to every lead's open items (one model call)")
+    sl = sssub.add_parser("link", help="link recent sessions to open items now (one model call, whatever the cadence)")
     sl.add_argument("--dry-run", action="store_true", help=dry)
     sk = sssub.add_parser("links", help="show the sessions linked to an item")
     sk.add_argument("id", type=int)
