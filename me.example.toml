@@ -26,6 +26,9 @@ terminal_app = "Terminal"
 user_id = "U00000000"
 # Apps you @-mention in threads (e.g. a Claude bot). Replies after you invoke one are to the bot, not to you.
 bot_ids = []
+# Optional: the workspace's team ID (T...), so Slack links open in the Slack app with no browser tab. When unset,
+# cos reads it from the Slack app on this Mac.
+# team_id = "T00000000"
 
 [notion]
 # Your Notion user id (a UUID). Ask Claude with the Notion connector: "what is my Notion user id?"

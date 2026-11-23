@@ -1489,6 +1489,19 @@ document.addEventListener("keydown", e => {
   else if (e.key === "a" && state.route.id) { const it = findItem(state.route.id); if (it && NEEDS_REVIEW.includes(it.status)) decide(it, "approve"); else if (it?.status === "likely_done") decide(it, "close"); }
 });
 
+// Slack links open straight in the Slack app (the server opens its slack:// link), so the browser doesn't leave a
+// "redirecting to Slack" tab behind. A modified click, or a link the server can't open, goes to the browser as usual.
+document.addEventListener("click", async e => {
+  const a = e.target.closest?.("a[href]");
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  let host;
+  try { host = new URL(a.href).hostname; } catch { return; }
+  if (!host.endsWith(".slack.com")) return;
+  e.preventDefault();
+  try { await api("/api/open-slack", { method: "POST", body: JSON.stringify({ url: a.href }) }); }
+  catch { window.open(a.href, "_blank", "noopener"); }
+});
+
 document.getElementById("brandMark").append(icon("spark", 15));
 state.route = parseHash();
 // Refresh in the background, but never while typing, so in-progress edits aren't clobbered.

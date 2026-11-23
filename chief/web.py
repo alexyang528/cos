@@ -590,6 +590,13 @@ def make_handler(token: str, port: int):
                 return self._close_likely_done()
             if self.path == "/api/chief":
                 return self._tell_chief()
+            if self.path == "/api/open-slack":
+                from . import launch
+                try:
+                    launch.open_in_slack(str(self._payload().get("url") or ""))
+                except (ValueError, launch.LaunchError) as e:
+                    return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e)})
+                return self._json(HTTPStatus.OK, {"ok": True})
             if NOTE_PATH.match(self.path):
                 from . import tell
                 conn = db.open_db()

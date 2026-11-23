@@ -21,7 +21,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from . import config, db, paths, store
 
@@ -201,6 +201,40 @@ def _open(url: str) -> None:
     r = subprocess.run(["open", url], capture_output=True, text=True)
     if r.returncode != 0:
         raise LaunchError(f"couldn't open the Claude app: {r.stderr.strip() or 'open failed'}")
+
+
+def slack_team_id(domain: str) -> str | None:
+    """The team ID for a workspace domain ("acme" of acme.slack.com): me.toml's, else the Slack app's own record."""
+    if config.SLACK_TEAM_ID:
+        return config.SLACK_TEAM_ID
+    state = Path.home() / "Library" / "Application Support" / "Slack" / "storage" / "root-state.json"
+    try:
+        workspaces = json.loads(state.read_text()).get("workspaces") or {}
+    except (OSError, ValueError):
+        return None
+    return next((tid for tid, w in workspaces.items() if isinstance(w, dict) and w.get("domain") == domain), None)
+
+
+def open_in_slack(url: str) -> None:
+    """Open a Slack permalink in the Slack app by its slack:// link, so no browser tab is left behind."""
+    from .workstreams import parse_link
+    host = urlparse(url).hostname or ""
+    parsed = parse_link(url) if host.endswith(".slack.com") else None
+    if not parsed:
+        raise ValueError("not a Slack link to a channel or message")
+    team = slack_team_id(host.removesuffix(".slack.com"))
+    if not team:
+        raise ValueError(f"don't know the team ID for {host}; set slack.team_id in me.toml")
+    channel, _, ts = parsed[1].partition(":")
+    params = {"team": team, "id": channel}
+    m = re.search(r"/p(\d{10})(\d{6})", urlparse(url).path)
+    if m:  # the message itself; ts (from parse_link) is its thread's parent
+        params["message"] = f"{m.group(1)}.{m.group(2)}"
+        if ts and ts != params["message"]:
+            params["thread_ts"] = ts
+    r = subprocess.run(["open", f"slack://channel?{urlencode(params)}"], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise LaunchError(f"couldn't open Slack: {r.stderr.strip() or 'open failed'}")
 
 
 SESSION_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")

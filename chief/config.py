@@ -18,6 +18,9 @@ GITHUB_REPO: str = _me.get("github_repo", "")
 SLACK_USER_ID: str = _me["slack"]["user_id"]
 # Slack apps I invoke in threads (the Claude bot). Replies after my @-mention of one are to the bot, not to me.
 SLACK_BOT_IDS = tuple(_me["slack"].get("bot_ids", []))
+# The workspace's team ID (T...), for opening Slack links straight in the Slack app. Optional: when unset it is read
+# from the Slack app's own state for the link's workspace.
+SLACK_TEAM_ID: str = _me["slack"].get("team_id", "")
 
 # First scan looks back this far; later scans resume from the stored cursor.
 SLACK_FIRST_SCAN_LOOKBACK_H = 24
